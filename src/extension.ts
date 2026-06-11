@@ -724,6 +724,8 @@ function scheduleP2AiAutostart(context: vscode.ExtensionContext, webview: Vscode
 					lmStudioMaxTokens,
 				})
 				controller.stateManager.setGlobalState("mode", "act")
+				controller.stateManager.setGlobalState("welcomeViewCompleted", true)
+				controller.stateManager.setGlobalState("isNewUser", false)
 				controller.stateManager.setGlobalState("autoApprovalSettings", {
 					...currentAutoApproval,
 					version: (currentAutoApproval.version ?? 1) + 1,
