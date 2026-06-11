@@ -11,6 +11,7 @@ import { HistoryItem } from "@/shared/HistoryItem"
 import { ClineStorageMessage } from "@/shared/messages/content"
 import { Logger } from "@/shared/services/Logger"
 import { getCwd, getDesktopDir } from "@/utils/path"
+import { recordApiConversationChange, recordClineMessageChange } from "../observability/p2ai-artifacts"
 import { ensureTaskDirectoryExists, saveApiConversationHistory, saveClineMessages } from "../storage/disk"
 import { TaskState } from "./TaskState"
 
@@ -75,6 +76,11 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 	 */
 	private emitClineMessagesChanged(change: ClineMessageChange): void {
 		this.emit("clineMessagesChanged", change)
+		recordClineMessageChange({
+			taskId: this.taskId,
+			ulid: this.ulid,
+			change,
+		})
 	}
 
 	setCheckpointTracker(tracker: CheckpointTracker | undefined) {
@@ -96,6 +102,12 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 
 	setApiConversationHistory(newHistory: ClineStorageMessage[]): void {
 		this.apiConversationHistory = newHistory
+		recordApiConversationChange({
+			taskId: this.taskId,
+			ulid: this.ulid,
+			changeType: "set",
+			history: this.apiConversationHistory,
+		})
 	}
 
 	getClineMessages(): ClineMessage[] {
@@ -179,6 +191,13 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 		// Protect with mutex to prevent concurrent modifications from corrupting data (RC-4)
 		return await this.withStateLock(async () => {
 			this.apiConversationHistory.push(message)
+			recordApiConversationChange({
+				taskId: this.taskId,
+				ulid: this.ulid,
+				changeType: "add",
+				history: this.apiConversationHistory,
+				message,
+			})
 			await saveApiConversationHistory(this.taskId, this.apiConversationHistory)
 		})
 	}
@@ -187,6 +206,12 @@ export class MessageStateHandler extends EventEmitter<MessageStateHandlerEvents>
 		// Protect with mutex to prevent concurrent modifications from corrupting data (RC-4)
 		return await this.withStateLock(async () => {
 			this.apiConversationHistory = newHistory
+			recordApiConversationChange({
+				taskId: this.taskId,
+				ulid: this.ulid,
+				changeType: "overwrite",
+				history: this.apiConversationHistory,
+			})
 			await saveApiConversationHistory(this.taskId, this.apiConversationHistory)
 		})
 	}

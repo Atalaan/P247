@@ -24,6 +24,7 @@ import { getHooksEnabledSafe } from "@core/hooks/hooks-utils"
 import { executePreCompactHookWithCleanup, HookCancellationError, HookExecution } from "@core/hooks/precompact-executor"
 import { ClineIgnoreController } from "@core/ignore/ClineIgnoreController"
 import { parseMentions } from "@core/mentions"
+import { recordPromptSnapshot } from "@core/observability/p2ai-artifacts"
 import { CommandPermissionController } from "@core/permissions"
 import { summarizeTask } from "@core/prompts/contextManagement"
 import { formatResponse } from "@core/prompts/responses"
@@ -1875,6 +1876,14 @@ export class Task {
 		const { systemPrompt, tools } = await getSystemPrompt(promptContext)
 		this.useNativeToolCalls = !!tools?.length
 		await this.writePromptMetadataArtifacts({ systemPrompt, providerInfo })
+		recordPromptSnapshot({
+			taskId: this.taskId,
+			ulid: this.ulid,
+			apiRequestCount: this.taskState.apiRequestCount,
+			systemPrompt,
+			tools,
+			providerInfo,
+		})
 
 		const contextManagementMetadata = await this.contextManager.getNewContextMessagesAndMetadata(
 			this.messageStateHandler.getApiConversationHistory(),

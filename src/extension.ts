@@ -28,6 +28,7 @@ import { improveWithCline } from "./core/controller/commands/improveWithCline"
 import { sendAddToInputEvent } from "./core/controller/ui/subscribeToAddToInput"
 import { sendShowWebviewEvent } from "./core/controller/ui/subscribeToShowWebview"
 import { HookDiscoveryCache } from "./core/hooks/HookDiscoveryCache"
+import { recordP2AiDiagnosticEvent } from "./core/observability/p2ai-artifacts"
 import { StateManager } from "./core/storage/StateManager"
 import {
 	cleanupMcpMarketplaceCatalogFromGlobalState,
@@ -55,6 +56,137 @@ import { telemetryService } from "./services/telemetry"
 import { SharedUriHandler, TASK_URI_PATH } from "./services/uri/SharedUriHandler"
 import { ShowMessageType } from "./shared/proto/host/window"
 import { fileExistsAtPath } from "./utils/fs"
+
+let p2aiOutputChannel: vscode.OutputChannel | undefined
+let p2aiStatusBarItem: vscode.StatusBarItem | undefined
+let p2aiMonitorPanel: vscode.WebviewPanel | undefined
+const p2aiMonitorEvents: { event: string; message: string; payload: Record<string, unknown>; at: string }[] = []
+
+function p2aiVisualDiagnosticsEnabled(): boolean {
+	return process.env.P2AI_CLINE_VISUAL_DIAGNOSTICS !== "0"
+}
+
+function escapeHtml(value: string): string {
+	return value
+		.replaceAll("&", "&amp;")
+		.replaceAll("<", "&lt;")
+		.replaceAll(">", "&gt;")
+		.replaceAll('"', "&quot;")
+		.replaceAll("'", "&#39;")
+}
+
+function renderP2AiMonitorHtml(): string {
+	const latest = p2aiMonitorEvents[p2aiMonitorEvents.length - 1]
+	const rows = p2aiMonitorEvents
+		.slice(-12)
+		.reverse()
+		.map(
+			(item) => `
+				<tr>
+					<td>${escapeHtml(item.at)}</td>
+					<td>${escapeHtml(item.event)}</td>
+					<td>${escapeHtml(item.message)}</td>
+				</tr>`,
+		)
+		.join("")
+	return `<!doctype html>
+	<html>
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<style>
+			body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 24px; }
+			h1 { margin: 0 0 8px; font-size: 24px; }
+			.badge { display: inline-block; padding: 4px 8px; border: 1px solid var(--vscode-focusBorder); border-radius: 4px; margin-bottom: 16px; }
+			.grid { display: grid; grid-template-columns: 180px 1fr; gap: 8px 16px; max-width: 1100px; }
+			.key { color: var(--vscode-descriptionForeground); }
+			pre { background: var(--vscode-textCodeBlock-background); padding: 12px; overflow: auto; max-height: 360px; }
+			table { border-collapse: collapse; width: 100%; margin-top: 18px; }
+			td, th { border-bottom: 1px solid var(--vscode-panel-border); padding: 8px; text-align: left; vertical-align: top; }
+		</style>
+	</head>
+	<body>
+		<h1>C2Ai Dev Monitor</h1>
+		<div class="badge">${escapeHtml(latest?.message ?? "waiting")}</div>
+		<div class="grid">
+			<div class="key">Laatste event</div><div>${escapeHtml(latest?.event ?? "-")}</div>
+			<div class="key">Tijd</div><div>${escapeHtml(latest?.at ?? "-")}</div>
+			<div class="key">Extension</div><div>${escapeHtml(String(latest?.payload?.extension_id ?? "-"))}</div>
+			<div class="key">Pad</div><div>${escapeHtml(String(latest?.payload?.extension_path ?? "-"))}</div>
+			<div class="key">Sidebar id</div><div>${escapeHtml(String(latest?.payload?.sidebar_id ?? "-"))}</div>
+			<div class="key">Model</div><div>${escapeHtml(String(latest?.payload?.lmStudioModelId ?? "-"))}</div>
+			<div class="key">Artifact root</div><div>${escapeHtml(String(latest?.payload?.artifact_root ?? process.env.P2AI_CLINE_ARTIFACT_ROOT ?? "-"))}</div>
+			<div class="key">Task</div><div>${escapeHtml(String(latest?.payload?.task ?? "-"))}</div>
+		</div>
+		<h2>Laatste payload</h2>
+		<pre>${escapeHtml(JSON.stringify(latest?.payload ?? {}, null, 2))}</pre>
+		<h2>Events</h2>
+		<table>
+			<thead><tr><th>Tijd</th><th>Event</th><th>Status</th></tr></thead>
+			<tbody>${rows}</tbody>
+		</table>
+	</body>
+	</html>`
+}
+
+function updateP2AiMonitor(context: vscode.ExtensionContext) {
+	if (process.env.P2AI_CLINE_DEV_MONITOR === "0") {
+		return
+	}
+	if (!p2aiMonitorPanel) {
+		p2aiMonitorPanel = vscode.window.createWebviewPanel("c2aiDevMonitor", "C2Ai Dev Monitor", vscode.ViewColumn.One, {
+			enableScripts: false,
+			retainContextWhenHidden: true,
+		})
+		context.subscriptions.push(
+			p2aiMonitorPanel.onDidDispose(() => {
+				p2aiMonitorPanel = undefined
+			}),
+		)
+	}
+	p2aiMonitorPanel.webview.html = renderP2AiMonitorHtml()
+	p2aiMonitorPanel.reveal(vscode.ViewColumn.One, false)
+}
+
+function p2aiVisualLog(
+	context: vscode.ExtensionContext,
+	event: string,
+	message: string,
+	payload: Record<string, unknown> = {},
+	notify = false,
+) {
+	if (!p2aiVisualDiagnosticsEnabled()) {
+		return
+	}
+	if (!p2aiOutputChannel) {
+		p2aiOutputChannel = vscode.window.createOutputChannel("C2Ai Dev")
+		context.subscriptions.push(p2aiOutputChannel)
+	}
+	if (!p2aiStatusBarItem) {
+		p2aiStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000)
+		p2aiStatusBarItem.name = "C2Ai Dev"
+		p2aiStatusBarItem.command = `${VscodeWebviewProvider.SIDEBAR_ID}.focus`
+		context.subscriptions.push(p2aiStatusBarItem)
+	}
+	const enrichedPayload = {
+		extension_id: ExtensionRegistryInfo.id,
+		extension_path: context.extensionPath,
+		sidebar_id: VscodeWebviewProvider.SIDEBAR_ID,
+		...payload,
+	}
+	p2aiMonitorEvents.push({ event, message, payload: enrichedPayload, at: new Date().toISOString() })
+	p2aiOutputChannel.appendLine(`[${new Date().toISOString()}] ${event}: ${message}`)
+	p2aiOutputChannel.appendLine(JSON.stringify(enrichedPayload, null, 2))
+	p2aiStatusBarItem.text = `$(hubot) C2Ai: ${message}`
+	p2aiStatusBarItem.tooltip = JSON.stringify(enrichedPayload, null, 2).slice(0, 1500)
+	p2aiStatusBarItem.show()
+	Logger.log(`[P2AI C2Ai] ${event}: ${message}`)
+	recordP2AiDiagnosticEvent({ event, message, payload: enrichedPayload })
+	updateP2AiMonitor(context)
+	if (notify) {
+		void vscode.window.showInformationMessage(`C2Ai: ${message}`)
+	}
+}
 
 // This method is called when the VS Code extension is activated.
 // NOTE: This is VS Code specific - services that should be registered
@@ -111,6 +243,17 @@ export async function activate(context: vscode.ExtensionContext) {
 			webviewOptions: { retainContextWhenHidden: true },
 		}),
 	)
+	p2aiVisualLog(
+		context,
+		"activation_visible",
+		"C2Ai dev extension active",
+		{
+			activation_elapsed_ms: Math.round(performance.now() - activationStartTime),
+			artifact_root: process.env.P2AI_CLINE_ARTIFACT_ROOT || process.env.CLINE_ARTIFACT_ROOT,
+		},
+		true,
+	)
+	scheduleP2AiAutostart(context, webview)
 
 	// NOTE: Commands must be added to the internal registry before registering them with VSCode
 	const { commands } = ExtensionRegistryInfo
@@ -537,6 +680,125 @@ ${ctx.cellJson || "{}"}
 	Logger.log(`[Cline] extension activated in ${performance.now() - activationStartTime} ms`)
 
 	return createClineAPI(webview.controller)
+}
+
+function scheduleP2AiAutostart(context: vscode.ExtensionContext, webview: VscodeWebviewProvider) {
+	const task = process.env.P2AI_CLINE_AUTOSTART_TASK
+	if (!task) {
+		return
+	}
+
+	const delayMs = Number(process.env.P2AI_CLINE_AUTOSTART_DELAY_MS || "2500")
+	p2aiVisualLog(context, "autostart_scheduled", "autostart scheduled", {
+		delay_ms: Number.isFinite(delayMs) ? delayMs : 2500,
+		task,
+	})
+	const timer = setTimeout(
+		async () => {
+			try {
+				const controller = webview.controller
+				const lmStudioBaseUrl = process.env.P2AI_CLINE_LMSTUDIO_BASE_URL || "http://127.0.0.1:1234"
+				const lmStudioModelId = process.env.P2AI_CLINE_LMSTUDIO_MODEL_ID || "gemma-4-E4B-it-GGUF"
+				const lmStudioMaxTokens = process.env.P2AI_CLINE_LMSTUDIO_CONTEXT_TOKENS || "16384"
+				const useCompactPrompt = process.env.P2AI_CLINE_COMPACT_PROMPT === "1"
+				const allowAutostartWrites = process.env.P2AI_CLINE_AUTOSTART_ALLOW_WRITES === "1"
+				const allowAutostartSafeCommands = process.env.P2AI_CLINE_AUTOSTART_ALLOW_COMMANDS === "safe"
+				const allowAutostartAllCommands = process.env.P2AI_CLINE_AUTOSTART_ALLOW_COMMANDS === "all"
+				const currentAutoApproval = controller.stateManager.getGlobalSettingsKey("autoApprovalSettings")
+				p2aiVisualLog(context, "autostart_configuring", "configuring LM Studio task", {
+					lmStudioBaseUrl,
+					lmStudioModelId,
+					lmStudioMaxTokens,
+					useCompactPrompt,
+					allowAutostartWrites,
+					allowAutostartCommands: process.env.P2AI_CLINE_AUTOSTART_ALLOW_COMMANDS || "none",
+				})
+
+				controller.stateManager.setApiConfiguration({
+					...controller.stateManager.getApiConfiguration(),
+					planModeApiProvider: "lmstudio",
+					actModeApiProvider: "lmstudio",
+					planModeLmStudioModelId: lmStudioModelId,
+					actModeLmStudioModelId: lmStudioModelId,
+					lmStudioBaseUrl,
+					lmStudioMaxTokens,
+				})
+				controller.stateManager.setGlobalState("mode", "act")
+				controller.stateManager.setGlobalState("autoApprovalSettings", {
+					...currentAutoApproval,
+					version: (currentAutoApproval.version ?? 1) + 1,
+					enableNotifications: false,
+					actions: {
+						...currentAutoApproval.actions,
+						readFiles: true,
+						readFilesExternally: false,
+						editFiles: allowAutostartWrites,
+						editFilesExternally: false,
+						executeSafeCommands: allowAutostartSafeCommands || allowAutostartAllCommands,
+						executeAllCommands: allowAutostartAllCommands,
+						useBrowser: false,
+						useMcp: false,
+					},
+				})
+				if (useCompactPrompt) {
+					controller.stateManager.setGlobalState("customPrompt", "compact")
+				}
+
+				await controller.postStateToWebview()
+				await vscode.commands.executeCommand("workbench.view.extension.claude-dev-ActivityBar")
+				await vscode.commands.executeCommand(`${VscodeWebviewProvider.SIDEBAR_ID}.focus`)
+				await showWebview(false)
+				await controller.postStateToWebview()
+				p2aiVisualLog(
+					context,
+					"sidebar_focus_requested",
+					"C2Ai sidebar focus requested",
+					{
+						sidebar_id: VscodeWebviewProvider.SIDEBAR_ID,
+						visible_instance: !!WebviewProvider.getVisibleInstance(),
+					},
+					true,
+				)
+				const taskId = await controller.initTask(task, undefined, undefined, undefined, {
+					mode: "act",
+					planModeApiProvider: "lmstudio",
+					actModeApiProvider: "lmstudio",
+					planModeLmStudioModelId: lmStudioModelId,
+					actModeLmStudioModelId: lmStudioModelId,
+					lmStudioBaseUrl,
+					lmStudioMaxTokens,
+					...(useCompactPrompt ? { customPrompt: "compact" as const } : {}),
+				})
+				p2aiVisualLog(
+					context,
+					"autostart_task_started",
+					"Gemma4 prompt submitted",
+					{
+						task_id: taskId,
+						lmStudioBaseUrl,
+						lmStudioModelId,
+						lmStudioMaxTokens,
+						task,
+					},
+					true,
+				)
+				Logger.log(`[P2AI Cline] Autostarted VS Code smoke task ${taskId}`)
+			} catch (error) {
+				p2aiVisualLog(
+					context,
+					"autostart_failed",
+					"autostart failed",
+					{
+						error: error instanceof Error ? error.message : String(error),
+					},
+					true,
+				)
+				Logger.error("[P2AI Cline] Failed to autostart VS Code smoke task:", error)
+			}
+		},
+		Number.isFinite(delayMs) ? delayMs : 2500,
+	)
+	timer.unref?.()
 }
 
 async function showJupyterPromptInput(title: string, placeholder: string): Promise<string | undefined> {

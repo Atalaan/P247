@@ -41,6 +41,7 @@ import { Logger } from "@/shared/services/Logger"
 import { Session } from "@/shared/services/Session"
 import { getLatestAnnouncementId } from "@/utils/announcements"
 import { getCwd, getDesktopDir } from "@/utils/path"
+import { recordControllerState } from "../observability/p2ai-artifacts"
 import { PromptRegistry } from "../prompts/system-prompt"
 import {
 	ensureCacheDirectoryExists,
@@ -839,6 +840,7 @@ export class Controller {
 
 	async postStateToWebview() {
 		const state = await this.getStateToPostToWebview()
+		recordControllerState(state)
 		await sendStateUpdate(state)
 	}
 
