@@ -1,0 +1,121 @@
+{
+  "schema": "p2ai.c2ai_gold.clean_reconstruction_manifest",
+  "created_at": "2026-06-11T15:35:53.9156929+02:00",
+  "reconstruction_root": "C:\\PAI_Platform\\assets\\Agent_Modules\\c2ai_gold_clean_reconstruct",
+  "cline_root": "C:\\PAI_Platform\\assets\\Agent_Modules\\c2ai_gold_clean_reconstruct\\Cline",
+  "clone_source": "https://github.com/cline/cline.git",
+  "base_commit": "5871fd02b111a16c9c58912d01c22bcb1532a817",
+  "branch": "c2ai_gold_reconstruct_from_clean",
+  "historical_patch_log": "C:\\Users\\alexl\\.codex\\sessions\\2026\\06\\03\\rollout-2026-06-03T14-18-01-019e8d6b-52bd-75e3-ae81-4bb542e6e9ff.jsonl",
+  "applied_patch_basis": [
+    "fresh clone of cline/cline",
+    "checkout 5871fd02b111a16c9c58912d01c22bcb1532a817",
+    "replayed C2Ai/Kessler patch records from 2026-06-08 Codex session",
+    "applied package identity p2ai-local.c2ai-dev / C2Ai",
+    "local wrappers force this clean reconstruction"
+  ],
+  "verification": {
+    "npm_ci_root": "ok",
+    "npm_ci_webview": "ok",
+    "npm_run_build_webview": "ok",
+    "npm_run_protos": "ok",
+    "tsc_no_emit_project_tsconfig": "ok_after_commit",
+    "node_esbuild_mjs": "ok_after_commit",
+    "runner_powershell_parse": "ok"
+  },
+  "webview_build": {
+    "required_for_visible_cline_sidebar": true,
+    "source_from_historical_log": "2026-06-08T14:19Z Codex log: resource errors disappeared after npm run build:webview",
+    "git_status": "ignored_build_output",
+    "files": [
+      {
+        "path": "webview-ui/build/index.html",
+        "sha256": "89B7A040EC0E732DDCE0B99EF3F92BA5CCF37E8A5F06D5A7A867E6326BEF3853",
+        "bytes": 364
+      },
+      {
+        "path": "webview-ui/build/assets/index.js",
+        "sha256": "69EFA2A686B508DFE1843DD8E059A8992B21DD207AE56957389A1317EBA035F8",
+        "bytes": 6120899
+      },
+      {
+        "path": "webview-ui/build/assets/index.css",
+        "sha256": "AE1CEEF850C2F709F4FB0666253240EC9217E344F586938CC155F1A519977270",
+        "bytes": 131392
+      }
+    ]
+  },
+  "golden_artifact_signals": {
+    "artifact": "C:\\PAI_Platform\\test_artifacts\\acceptance\\c2ai_gemma4_toolmatrix_20260608_192141\\read_file_summary\\latest_prompt_snapshot.json",
+    "system_prompt_chars_latest": 3134,
+    "system_prompt_sha256_latest": "8ce62318da4094d81ac361391f24399f3cd7faa57b9037324abfcd822d7fe160",
+    "tool_count_latest": 8,
+    "provider_id": "lmstudio",
+    "custom_prompt": "compact",
+    "mode": "act",
+    "model_id": "gemma-4-E4B-it-GGUF",
+    "context_window": 32768,
+    "temperature": 0,
+    "prompt_created_events": [
+      {
+        "prompt_chars": 21584,
+        "message_count": 1,
+        "tool_count": 8,
+        "max_tokens": 2048,
+        "preview_starts_with_override": true
+      },
+      {
+        "prompt_chars": 21606,
+        "message_count": 3,
+        "tool_count": 8,
+        "max_tokens": 2048,
+        "preview_starts_with_override": true
+      }
+    ]
+  },
+  "reconstructed_source_signals": {
+    "contains_protocol_override": true,
+    "contains_attempt_completion_rule": true,
+    "contains_stream_fallback_attempt_completion": true,
+    "contains_autostart_allow_flags": true,
+    "contains_completion_cap_env": true,
+    "package_name": "c2ai-dev",
+    "package_display_name": "C2Ai",
+    "package_publisher": "p2ai-local"
+  },
+  "verified_clean_preflight": {
+    "artifact": "C:\\PAI_Platform\\test_artifacts\\acceptance\\c2ai_gold_autostart_repro_20260611_154944",
+    "status": "completed_preflight",
+    "extension_id": "p2ai-local.c2ai-dev",
+    "extension_path": "c:\\PAI_Platform\\assets\\Agent_Modules\\c2ai_gold_clean_reconstruct\\Cline",
+    "target_window": "[Extension Development Host] PAI_Platform - Visual Studio Code",
+    "screenshots": [
+      "screenshots\\01_before_welcome_clicks.png",
+      "screenshots\\02_after_three_welcome_clicks.png",
+      "screenshots\\03_after_autostart_observe.png"
+    ],
+    "request_1_system_prompt_sha256": "30f072a1ab56b52fe1d181be36b7d5a9ecb3b7d7b0bcae86c7bcf90ed0b5a3ce",
+    "request_1_tool_schema_sha256": "a0c162d4935280f25736bdf084ef36a7d4dcda2f7e9bfb60fe32cb4a34831725",
+    "matches_golden_read_file_summary_request_1": true
+  },
+  "verified_visible_task_preflight_after_onboarding_fix": {
+    "artifact": "C:\\PAI_Platform\\test_artifacts\\acceptance\\c2ai_gold_autostart_repro_20260611_161621",
+    "status": "completed_preflight",
+    "historical_fix_source": "2026-06-08T13:19Z Codex log: autostart sets welcomeViewCompleted=true and isNewUser=false before the 2026-06-08T17:21Z golden run",
+    "screenshot": "screenshots\\03_after_autostart_observe.png",
+    "screenshot_sha256": "48CDE7B5FE1D7361750DC4FD8D99A58FB5A35BEF3677ACC290D00BC1E02DB034",
+    "screenshot_bytes": 115310,
+    "visible_result": "Cline sidebar shows the real running task card with Thinking/Auto-approve Read instead of onboarding.",
+    "request_1_system_prompt_sha256": "30f072a1ab56b52fe1d181be36b7d5a9ecb3b7d7b0bcae86c7bcf90ed0b5a3ce",
+    "request_1_tool_schema_sha256": "a0c162d4935280f25736bdf084ef36a7d4dcda2f7e9bfb60fe32cb4a34831725",
+    "matches_golden_read_file_summary_request_1": true
+  },
+  "run_commands": {
+    "single_autostart_screenshot": "C:\\PAI_Platform\\assets\\Agent_Modules\\c2ai_gold_clean_reconstruct\\run_gold_autostart_clean.bat",
+    "six_case_toolmatrix": "C:\\PAI_Platform\\assets\\Agent_Modules\\c2ai_gold_clean_reconstruct\\run_gold_toolmatrix_clean.bat"
+  },
+  "git_status_short": " M src/core/api/providers/lmstudio.ts\n M src/core/controller/index.ts\n M src/core/task/index.ts\n M src/core/task/message-state.ts\n M src/extension.ts\n M src/registry.ts\n?? src/core/api/transform/gemma4-kessler/\n?? src/core/observability/",
+  "reconstructed_commit": "96635027241619474ac8d2ca403671330d6fa306",
+  "onboarding_bypass_commit": "884dc3459e3f17b05d95a98f933c4ddf0e56e0d8d",
+  "postcommit_git_status_short": ""
+}
