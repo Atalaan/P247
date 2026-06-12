@@ -1088,6 +1088,9 @@ const ChatTextArea = forwardRef<HTMLTextAreaElement, ChatTextAreaProps>(
 				case "together":
 					return `${selectedProvider}:${togetherModelId}`
 				case "lmstudio":
+					if (apiConfiguration.lmStudioBaseUrl?.includes("127.0.0.1:18081")) {
+						return `p247-p2ai:${lmStudioModelId}`
+					}
 					return `${selectedProvider}:${lmStudioModelId}`
 				case "ollama":
 					return `${selectedProvider}:${ollamaModelId}`

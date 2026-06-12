@@ -164,19 +164,38 @@ function conciseToolSchema(name: string, parameters: unknown): {
 }
 
 function toolDeclarationsForPrompt(systemPrompt: string, tools?: OpenAITool[]): string {
+	const openAiToolNames = new Set<string>()
 	const openAiDeclarations = (tools || [])
-		.map(formatToolDeclaration)
+		.map((tool) => {
+			if (tool.type === "function") {
+				openAiToolNames.add(tool.function.name)
+			}
+			return formatToolDeclaration(tool)
+		})
 		.filter((declaration) => declaration.length > 0)
+	const fallbackDeclarations = fallbackClineToolDeclarations(systemPrompt, openAiToolNames)
 	if (openAiDeclarations.length > 0) {
-		return openAiDeclarations.join("")
+		return [...openAiDeclarations, ...fallbackDeclarations].join("")
 	}
-	return fallbackClineToolDeclarations(systemPrompt).join("")
+	return fallbackDeclarations.join("")
 }
 
-function fallbackClineToolDeclarations(systemPrompt: string): string[] {
+function fallbackClineToolDeclarations(systemPrompt: string, skipToolNames = new Set<string>()): string[] {
 	return fallbackClineTools
-		.filter((tool) => systemPrompt.includes(`## ${tool.name}`) || systemPrompt.includes(`<${tool.name}>`))
+		.filter((tool) => !skipToolNames.has(tool.name) && systemPromptMentionsTool(systemPrompt, tool.name))
 		.map((tool) => `<|tool>declaration:${tool.name}${JSON.stringify(tool.schema)}<tool|>`)
+}
+
+function systemPromptMentionsTool(systemPrompt: string, toolName: string): boolean {
+	return (
+		systemPrompt.includes(`## ${toolName}`) ||
+		systemPrompt.includes(`<${toolName}>`) ||
+		new RegExp(`(^|[^A-Za-z0-9_])${escapeRegExp(toolName)}([^A-Za-z0-9_]|$)`).test(systemPrompt)
+	)
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 const fallbackClineTools: Array<{
@@ -398,7 +417,7 @@ function formatToolResponse(name: string, content: string): string {
 		ok: true,
 		status: "ok",
 		mime: "text/plain",
-		content_b64: Buffer.from(raw, "utf8").toString("base64"),
+		content: raw,
 	}
 	return `response:${name}${JSON.stringify(payload)}<tool_response|>`
 }

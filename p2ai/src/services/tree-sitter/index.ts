@@ -6,26 +6,33 @@ import * as path from "path"
 import { Logger } from "@/shared/services/Logger"
 import { LanguageParser, loadRequiredLanguageParsers } from "./languageParser"
 
+const fallbackDefinitionExtensions = new Set([".dart"])
+
 // TODO: implement caching behavior to avoid having to keep analyzing project for new tasks.
 export async function parseSourceCodeForDefinitionsTopLevel(
 	dirPath: string,
 	clineIgnoreController?: ClineIgnoreController,
 ): Promise<string> {
 	// check if the path exists
-	const dirExists = await fileExistsAtPath(path.resolve(dirPath))
-	if (!dirExists) {
-		return "This directory does not exist or you do not have permission to access it."
+	const resolvedPath = path.resolve(dirPath)
+	const pathExists = await fileExistsAtPath(resolvedPath)
+	if (!pathExists) {
+		return "This path does not exist or you do not have permission to access it."
 	}
 
-	// Get all files at top level (not gitignored)
-	const [allFiles, _] = await listFiles(dirPath, false, 200)
+	const pathStats = await fs.stat(resolvedPath)
+	const basePath = pathStats.isFile() ? path.dirname(resolvedPath) : resolvedPath
+	const allFiles = pathStats.isFile() ? [resolvedPath] : (await listFiles(resolvedPath, false, 200))[0]
 
 	let result = ""
 
 	// Separate files to parse and remaining files
 	const { filesToParse, remainingFiles } = separateFiles(allFiles)
 
-	const languageParsers = await loadRequiredLanguageParsers(filesToParse)
+	const filesRequiringLanguageParsers = filesToParse.filter(
+		(file) => !fallbackDefinitionExtensions.has(path.extname(file).toLowerCase()),
+	)
+	const languageParsers = await loadRequiredLanguageParsers(filesRequiringLanguageParsers)
 
 	// Parse specific files we have language parsers for
 	// const filesWithoutDefinitions: string[] = []
@@ -36,7 +43,7 @@ export async function parseSourceCodeForDefinitionsTopLevel(
 	for (const filePath of allowedFilesToParse) {
 		const definitions = await parseFile(filePath, languageParsers, clineIgnoreController)
 		if (definitions) {
-			result += `${path.relative(dirPath, filePath).toPosix()}\n${definitions}\n`
+			result += `${path.relative(basePath, filePath).toPosix()}\n${definitions}\n`
 		}
 		// else {
 		// 	filesWithoutDefinitions.push(file)
@@ -87,6 +94,7 @@ function separateFiles(allFiles: string[]): {
 		"swift",
 		// Kotlin
 		"kt",
+		"dart",
 	].map((e) => `.${e}`)
 	const filesToParse = allFiles.filter((file) => extensions.includes(path.extname(file))).slice(0, 50) // 50 files max
 	const remainingFiles = allFiles.filter((file) => !filesToParse.includes(file))
@@ -119,6 +127,10 @@ async function parseFile(
 	}
 	const fileContent = await fs.readFile(filePath, "utf8")
 	const ext = path.extname(filePath).toLowerCase().slice(1)
+
+	if (ext === "dart") {
+		return parseDartDefinitions(fileContent)
+	}
 
 	const { parser, query } = languageParsers[ext] || {}
 	if (!parser || !query) {
@@ -180,5 +192,56 @@ async function parseFile(
 	if (formattedOutput.length > 0) {
 		return `|----\n${formattedOutput}|----\n`
 	}
+	return null
+}
+
+function parseDartDefinitions(fileContent: string): string | null {
+	const lines = fileContent.split("\n")
+	const definitions: string[] = []
+	let inMultilineString = false
+	const maxDefinitions = 12
+
+	lines.forEach((line) => {
+		if (definitions.length >= maxDefinitions) {
+			return
+		}
+		const tripleQuoteCount = (line.match(/(?:r)?(?:'''|""")/g) ?? []).length
+		if (inMultilineString) {
+			if (tripleQuoteCount % 2 === 1) {
+				inMultilineString = false
+			}
+			return
+		}
+		if (tripleQuoteCount % 2 === 1) {
+			inMultilineString = true
+			return
+		}
+		const definition = dartDefinitionName(line)
+		if (definition) {
+			definitions.push(`- ${definition}`)
+		}
+	})
+
+	return definitions.length > 0 ? `Definitions:\n${definitions.join("\n")}\n` : null
+}
+
+function dartDefinitionName(line: string): string | null {
+	const trimmed = line.trim()
+	const classMatch = trimmed.match(/^(?:abstract\s+|base\s+|final\s+|sealed\s+|interface\s+)*class\s+([A-Za-z_]\w*)/)
+	if (classMatch) return `class ${classMatch[1]}`
+	const mixinMatch = trimmed.match(/^(?:base\s+)?mixin\s+([A-Za-z_]\w*)/)
+	if (mixinMatch) return `mixin ${mixinMatch[1]}`
+	const enumMatch = trimmed.match(/^enum\s+([A-Za-z_]\w*)/)
+	if (enumMatch) return `enum ${enumMatch[1]}`
+	const extensionMatch = trimmed.match(/^extension\s+([A-Za-z_]\w*)?/)
+	if (extensionMatch?.[1]) return `extension ${extensionMatch[1]}`
+	const typedefMatch = trimmed.match(/^typedef\s+([A-Za-z_]\w*)/)
+	if (typedefMatch) return `typedef ${typedefMatch[1]}`
+	const accessorMatch = trimmed.match(/^(?:static\s+)?(?:get|set)\s+([A-Za-z_]\w*)/)
+	if (accessorMatch) return `accessor ${accessorMatch[1]}`
+	const functionMatch = trimmed.match(
+		/^(?:static\s+)?(?!(?:if|for|while|switch|catch|function)\b)(?:Future(?:Or)?<[^>]+>|Stream<[^>]+>|[A-Za-z_]\w*(?:<[^>]+>)?|void)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*(?:async\s*)?[{=>]/,
+	)
+	if (functionMatch) return `function ${functionMatch[1]}`
 	return null
 }

@@ -174,11 +174,175 @@ function parseGemma4ToolCallBody(tokens: Gemma4Token[]): Gemma4ToolCall | undefi
 			arguments: parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {},
 		}
 	} catch {
+		const looseArgs = parseLooseGemma4Args(argsText)
+		if (Object.keys(looseArgs).length > 0) {
+			return {
+				name,
+				arguments: looseArgs,
+			}
+		}
 		return {
 			name,
 			arguments: parseGemma4DelimitedArgs(tokens),
 		}
 	}
+}
+
+function parseLooseGemma4Args(argsText: string): Record<string, unknown> {
+	const start = argsText.indexOf("{")
+	const end = argsText.lastIndexOf("}")
+	if (start === -1 || end === -1 || start >= end) {
+		return {}
+	}
+
+	const body = argsText.slice(start + 1, end)
+	const args: Record<string, unknown> = {}
+	let pos = 0
+
+	while (pos < body.length) {
+		while (pos < body.length && (body[pos] === "," || /\s/.test(body[pos]))) {
+			pos += 1
+		}
+		if (pos >= body.length) {
+			break
+		}
+
+		const keyResult = readLooseKey(body, pos)
+		if (!keyResult) {
+			break
+		}
+		const key = normalizeGemma4ArgKey(keyResult.value)
+		pos = keyResult.next
+		while (pos < body.length && /\s/.test(body[pos])) {
+			pos += 1
+		}
+		if (!key || body[pos] !== ":") {
+			break
+		}
+		pos += 1
+		while (pos < body.length && /\s/.test(body[pos])) {
+			pos += 1
+		}
+
+		const valueResult = readLooseValue(body, pos)
+		args[key] = valueResult.value
+		pos = valueResult.next
+	}
+
+	return args
+}
+
+function readLooseKey(text: string, pos: number): { value: string; next: number } | undefined {
+	if (text[pos] === '"') {
+		return readLooseKeyString(text, pos)
+	}
+
+	const start = pos
+	while (pos < text.length && text[pos] !== ":") {
+		pos += 1
+	}
+	if (pos >= text.length) {
+		return undefined
+	}
+	return { value: text.slice(start, pos).trim(), next: pos }
+}
+
+function readLooseKeyString(text: string, pos: number): { value: string; next: number } | undefined {
+	let value = ""
+	pos += 1
+
+	while (pos < text.length) {
+		const char = text[pos]
+		if (char === "\\") {
+			const next = text[pos + 1]
+			if (next) {
+				value += next
+				pos += 2
+				continue
+			}
+		}
+
+		if (char === '"') {
+			let lookahead = pos + 1
+			while (lookahead < text.length && /\s/.test(text[lookahead])) {
+				lookahead += 1
+			}
+			if (text[lookahead] === ":") {
+				return { value, next: pos + 1 }
+			}
+		}
+
+		value += char
+		pos += 1
+	}
+
+	return undefined
+}
+
+function readLooseValue(text: string, pos: number): { value: unknown; next: number } {
+	if (text[pos] === '"') {
+		return readLooseString(text, pos)
+	}
+
+	const start = pos
+	while (pos < text.length && text[pos] !== "," && text[pos] !== "}") {
+		pos += 1
+	}
+	return { value: castGemma4Value(text.slice(start, pos).trim()), next: pos }
+}
+
+function readLooseString(text: string, pos: number): { value: string; next: number } {
+	let value = ""
+	pos += 1
+
+	while (pos < text.length) {
+		const char = text[pos]
+		if (char === "\\") {
+			const next = text[pos + 1]
+			if (next === "n") {
+				value += "\n"
+				pos += 2
+				continue
+			}
+			if (next === "r") {
+				const after = text[pos + 2]
+				if (!after || /[,\]}"\s]/.test(after)) {
+					value += "\r"
+					pos += 2
+					continue
+				}
+			}
+			if (next === "t") {
+				value += "\t"
+				pos += 2
+				continue
+			}
+			if (next === '"' || next === "\\" || next === "/") {
+				value += next
+				pos += 2
+				continue
+			}
+			if (next) {
+				value += `\\${next}`
+				pos += 2
+				continue
+			}
+		}
+		if (char === '"' && isLooseStringTerminator(text, pos + 1)) {
+			return { value, next: pos + 1 }
+		}
+		value += char
+		pos += 1
+	}
+
+	return { value, next: pos }
+}
+
+function isLooseStringTerminator(text: string, pos: number): boolean {
+	while (pos < text.length && /\s/.test(text[pos])) {
+		pos += 1
+	}
+	return pos >= text.length || text[pos] === "," || text[pos] === "}"
 }
 
 function parseGemma4DelimitedArgs(tokens: Gemma4Token[]): Record<string, unknown> {
@@ -213,7 +377,7 @@ function parseGemma4DelimitedArgs(tokens: Gemma4Token[]): Record<string, unknown
 		while (pos < body.length && body[pos] !== ":") {
 			pos += 1
 		}
-		const key = body.slice(keyStart, pos).trim()
+		const key = normalizeGemma4ArgKey(body.slice(keyStart, pos).trim())
 		if (!key || pos >= body.length) {
 			break
 		}
@@ -239,6 +403,10 @@ function parseGemma4DelimitedArgs(tokens: Gemma4Token[]): Record<string, unknown
 	}
 
 	return args
+}
+
+function normalizeGemma4ArgKey(key: string): string {
+	return key.replaceAll(stringMarker, "").replace(/^"+|"+$/g, "").trim()
 }
 
 function castGemma4Value(value: string): unknown {
