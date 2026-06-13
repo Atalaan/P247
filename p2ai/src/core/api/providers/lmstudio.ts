@@ -339,9 +339,7 @@ export class LmStudioHandler implements ApiHandler {
 					error: error instanceof Error ? error.message : String(error),
 				},
 			})
-			throw new Error(
-				`LM Studio Gemma4/Kessler request failed: ${error instanceof Error ? error.message : String(error)}`,
-			)
+			throw new Error(`LM Studio Gemma4/Kessler request failed: ${error instanceof Error ? error.message : String(error)}`)
 		}
 	}
 
@@ -434,23 +432,26 @@ export class LmStudioHandler implements ApiHandler {
 	}
 
 	private recordGemma4ToolCall(event: ApiStreamToolCallsChunk, attempt: "primary" | "repair") {
+		const isPartial = event.partial === true
 		recordLlmParserEvent({
 			stack: "lmstudio_vscode_c2ai",
 			route: "gemma4_kessler_completion",
 			provider: "lmstudio",
 			modelId: this.getModel().id,
-			event: "gemma4_kessler_tool_call_emitted",
+			event: isPartial ? "gemma4_kessler_partial_tool_call_emitted" : "gemma4_kessler_tool_call_emitted",
 			attempt,
 			payload: {
+				partial: isPartial,
 				tool_name: event.tool_call.function.name,
 				arguments: event.tool_call.function.arguments,
 			},
 		})
 		recordP2AiDiagnosticEvent({
-			event: "gemma4_kessler_tool_call_emitted",
-			message: `Gemma4 emitted tool call ${event.tool_call.function.name || "unknown"}`,
+			event: isPartial ? "gemma4_kessler_partial_tool_call_emitted" : "gemma4_kessler_tool_call_emitted",
+			message: `Gemma4 emitted ${isPartial ? "partial " : ""}tool call ${event.tool_call.function.name || "unknown"}`,
 			payload: {
 				attempt,
+				partial: isPartial,
 				tool_name: event.tool_call.function.name,
 				arguments: event.tool_call.function.arguments,
 			},
@@ -552,9 +553,7 @@ export class LmStudioHandler implements ApiHandler {
 					error: error instanceof Error ? error.message : String(error),
 				},
 			})
-			throw new Error(
-				`LM Studio GPT-OSS/Harmony request failed: ${error instanceof Error ? error.message : String(error)}`,
-			)
+			throw new Error(`LM Studio GPT-OSS/Harmony request failed: ${error instanceof Error ? error.message : String(error)}`)
 		}
 	}
 

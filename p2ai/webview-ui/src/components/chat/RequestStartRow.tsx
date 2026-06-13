@@ -226,6 +226,17 @@ export const RequestStartRow: React.FC<RequestStartRowProps> = ({
 					</div>
 				</div>
 			)}
+			{apiReqState === "pre" && !shouldShowActivities && (
+				<ThinkingRow
+					isExpanded={false}
+					isStreaming={true}
+					isVisible={true}
+					reasoningContent=""
+					showChevron={false}
+					showTitle={true}
+					title="Thinking..."
+				/>
+			)}
 			{reasoningContent &&
 				(!hasCost ? (
 					// Still streaming - show "Thinking..." text with shimmer

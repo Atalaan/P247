@@ -142,6 +142,9 @@ export const MessagesArea: React.FC<MessagesAreaProps> = ({
 	// Keep loader in the message flow (not footer). During handoff from waiting -> reasoning stream,
 	// keep the loader mounted until a real reasoning row is visible.
 	const showThinkingLoaderRow = useMemo(() => {
+		if (lastVisibleMessage?.say === "api_req_started") {
+			return false
+		}
 		const handoffToReasoningPending =
 			lastRawMessage?.type === "say" &&
 			lastRawMessage.say === "reasoning" &&

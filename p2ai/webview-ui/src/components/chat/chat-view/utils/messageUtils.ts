@@ -78,12 +78,11 @@ export function filterVisibleMessages(messages: ClineMessage[]): ClineMessage[] 
 				return false
 			// NOTE: reasoning passes through to be included in tool groups
 			case "api_req_started": {
-				// api_req_started rows only render visible content for errors/cancels.
-				// Reasoning has its own standalone ChatRows. Everything else renders
-				// as invisible padding. Filter out unless there's an error.
+				// Keep active request rows visible so RequestStartRow can render the
+				// waiting shimmer before the first model chunk arrives.
 				try {
 					const info = JSON.parse(message.text || "{}")
-					if (info.cancelReason || info.streamingFailedMessage) {
+					if (info.cost == null || info.cancelReason || info.streamingFailedMessage) {
 						break // keep - has error content
 					}
 				} catch {

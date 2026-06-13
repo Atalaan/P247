@@ -16,7 +16,10 @@ export function hasCompleteGemma4ToolCall(text: string): boolean {
 	return text.includes("<|tool_call>") && text.includes("<tool_call|>")
 }
 
-export function parseGemma4ToolCalls(text: string): Gemma4ToolCall[] {
+export function parseGemma4ToolCalls(
+	text: string,
+	options: { allowUnterminatedAtEof?: boolean } = {},
+): Gemma4ToolCall[] {
 	const tokens = tokenizeGemma4(text)
 	const calls: Gemma4ToolCall[] = []
 	let index = 0
@@ -37,6 +40,11 @@ export function parseGemma4ToolCalls(text: string): Gemma4ToolCall[] {
 		if (index < tokens.length) {
 			index += 1
 			const call = parseGemma4ToolCallBody(body)
+			if (call) {
+				calls.push(call)
+			}
+		} else if (options.allowUnterminatedAtEof) {
+			const call = parseGemma4ToolCallBody(body, { requireCompleteObject: true })
 			if (call) {
 				calls.push(call)
 			}
@@ -146,7 +154,10 @@ export function extractGemma4FinalResponse(text: string): string {
 	return parts.join("").trim()
 }
 
-function parseGemma4ToolCallBody(tokens: Gemma4Token[]): Gemma4ToolCall | undefined {
+function parseGemma4ToolCallBody(
+	tokens: Gemma4Token[],
+	options: { requireCompleteObject?: boolean } = {},
+): Gemma4ToolCall | undefined {
 	const fullText = tokens
 		.filter((token) => token.type === "TEXT")
 		.map((token) => token.value)
@@ -166,7 +177,14 @@ function parseGemma4ToolCallBody(tokens: Gemma4Token[]): Gemma4ToolCall | undefi
 		return undefined
 	}
 
-	const argsText = fullText.slice(braceIndex)
+	let argsText = fullText.slice(braceIndex)
+	if (options.requireCompleteObject) {
+		const completeArgsText = completeLeadingJsonObject(argsText)
+		if (!completeArgsText) {
+			return undefined
+		}
+		argsText = completeArgsText
+	}
 	try {
 		const parsed = JSON.parse(argsText)
 		return {
@@ -179,6 +197,50 @@ function parseGemma4ToolCallBody(tokens: Gemma4Token[]): Gemma4ToolCall | undefi
 			arguments: parseGemma4DelimitedArgs(tokens),
 		}
 	}
+}
+
+function completeLeadingJsonObject(text: string): string | undefined {
+	if (!text.startsWith("{")) {
+		return undefined
+	}
+
+	let depth = 0
+	let inString = false
+	let escaped = false
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index]
+		if (inString) {
+			if (escaped) {
+				escaped = false
+				continue
+			}
+			if (char === "\\") {
+				escaped = true
+				continue
+			}
+			if (char === '"') {
+				inString = false
+			}
+			continue
+		}
+
+		if (char === '"') {
+			inString = true
+			continue
+		}
+		if (char === "{") {
+			depth += 1
+			continue
+		}
+		if (char === "}") {
+			depth -= 1
+			if (depth === 0) {
+				return text.slice(0, index + 1)
+			}
+		}
+	}
+
+	return undefined
 }
 
 function parseGemma4DelimitedArgs(tokens: Gemma4Token[]): Record<string, unknown> {

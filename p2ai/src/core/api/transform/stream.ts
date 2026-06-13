@@ -38,6 +38,11 @@ export interface ApiStreamToolCallsChunk {
 	 */
 	tool_call: ApiStreamToolCall
 	/**
+	 * True when this chunk contains an incomplete native tool call argument
+	 * delta that is intended only for visible streaming UI updates.
+	 */
+	partial?: boolean
+	/**
 	 * The response ID associated with this chunk
 	 */
 	id?: string

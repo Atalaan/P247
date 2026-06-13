@@ -11,7 +11,7 @@ export class Gemma4KesslerStreamAdapter {
 		const chunks: ApiStreamChunk[] = []
 
 		this.pushThinkingIfComplete(chunks)
-		for (const chunk of this.newToolCallChunks()) {
+		for (const chunk of this.newToolCallChunks({ allowUnterminatedAtEof: true })) {
 			chunks.push(chunk)
 		}
 
@@ -52,8 +52,8 @@ export class Gemma4KesslerStreamAdapter {
 		}
 	}
 
-	private newToolCallChunks(): ApiStreamToolCallsChunk[] {
-		const calls = parseGemma4ToolCalls(this.buffer)
+	private newToolCallChunks(options: { allowUnterminatedAtEof?: boolean } = {}): ApiStreamToolCallsChunk[] {
+		const calls = parseGemma4ToolCalls(this.buffer, options)
 		if (calls.length <= this.emittedToolCallCount) {
 			return []
 		}

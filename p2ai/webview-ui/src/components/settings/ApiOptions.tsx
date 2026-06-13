@@ -1,7 +1,7 @@
 import { StringRequest } from "@shared/proto/cline/common"
 import PROVIDERS from "@shared/providers/providers.json"
 import { Mode } from "@shared/storage/types"
-import { VSCodeButton, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
+import { VSCodeButton, VSCodeCheckbox, VSCodeTextField } from "@vscode/webview-ui-toolkit/react"
 import Fuse from "fuse.js"
 import { KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInterval } from "react-use"
@@ -114,6 +114,15 @@ type P2AiLocalModel = {
 	reason?: string | null
 }
 
+async function callP2AiLocalRoute<TResponse>(methodName: string, request: Record<string, unknown>): Promise<TResponse> {
+	return ModelsServiceClient.makeUnaryRequest(
+		methodName,
+		request,
+		(value) => value,
+		(value) => value as TResponse,
+	)
+}
+
 const getStoredInferenceProvider = (): InferenceProvider => {
 	if (typeof window === "undefined") {
 		return "local_runtime"
@@ -193,6 +202,7 @@ const ApiOptions = ({
 	const p2AiContextSize = p2AiApiConfiguration?.p2aiLocalContextSize || "16384"
 	const p2AiMaxNewTokens = p2AiApiConfiguration?.p2aiLocalMaxNewTokens || "1024"
 	const p2AiThreads = p2AiApiConfiguration?.p2aiLocalThreads || "5"
+	const p2AiStreamingEnabled = String(p2AiApiConfiguration?.p2aiLocalStreamingEnabled || "false") === "true"
 	const p2AiModelDependencyId =
 		currentMode === "plan"
 			? p2AiApiConfiguration?.planModeP2AiLocalModelDependencyId
@@ -201,10 +211,10 @@ const ApiOptions = ({
 		currentMode === "plan" ? p2AiApiConfiguration?.planModeP2AiLocalModelId : p2AiApiConfiguration?.actModeP2AiLocalModelId
 
 	async function updateP2AiApiFields(updates: Record<string, unknown>) {
-		await ModelsServiceClient.updateP2AiApiConfigurationPartial({
+		await ModelsServiceClient.updateApiConfigurationPartial({
 			apiConfiguration: updates,
 			updateMask: Object.keys(updates),
-		})
+		} as any)
 	}
 
 	function selectP2AiModel(model: P2AiLocalModel) {
@@ -231,12 +241,12 @@ const ApiOptions = ({
 			return
 		}
 		try {
-			const capabilities = await ModelsServiceClient.getP2AiLocalRuntimeCapabilities({})
+			const capabilities = await callP2AiLocalRoute<any>("getP2AiLocalRuntimeCapabilities", {})
 			setP2AiCapabilities({
 				runtimes: Array.isArray(capabilities?.runtimes) ? capabilities.runtimes : [],
 				backends: Array.isArray(capabilities?.backends) ? capabilities.backends : [],
 			})
-			const modelsResponse = await ModelsServiceClient.getP2AiLocalModels({
+			const modelsResponse = await callP2AiLocalRoute<any>("getP2AiLocalModels", {
 				runtime: p2AiRuntime,
 				category: "llm",
 				includeUnavailable: true,
@@ -344,7 +354,7 @@ const ApiOptions = ({
 		setIsP2AiRuntimeTesting(true)
 		setP2AiRuntimeStatus("Testing...")
 		try {
-			const response = await ModelsServiceClient.testP2AiLocalRuntime({
+			const response = await callP2AiLocalRoute<any>("testP2AiLocalRuntime", {
 				runtime: p2AiRuntime,
 				backend: p2AiBackend,
 				modelDependencyId: p2AiModelDependencyId || "p2ai/llm/gemma-4-E4B-it-GGUF",
@@ -563,6 +573,19 @@ const ApiOptions = ({
 							Max output
 						</VSCodeTextField>
 					</P2AiRuntimeGrid>
+
+					<P2AiRuntimeToggleRow>
+						<VSCodeCheckbox
+							checked={p2AiStreamingEnabled}
+							data-testid="p2ai-local-streaming-enabled"
+							onChange={(event) =>
+								updateP2AiApiFields({
+									p2aiLocalStreamingEnabled: (event.target as HTMLInputElement).checked ? "true" : "false",
+								})
+							}>
+							Streaming
+						</VSCodeCheckbox>
+					</P2AiRuntimeToggleRow>
 
 					<VSCodeButton data-testid="p2ai-local-test-runtime" disabled={isP2AiRuntimeTesting} onClick={testP2AiRuntime}>
 						Test runtime
@@ -941,6 +964,12 @@ const P2AiRuntimeGrid = styled.div`
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 	gap: 8px;
+`
+
+const P2AiRuntimeToggleRow = styled.div`
+	display: flex;
+	align-items: center;
+	min-height: 26px;
 `
 
 const NativeSelect = styled.select`

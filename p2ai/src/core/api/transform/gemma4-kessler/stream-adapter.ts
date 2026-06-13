@@ -2,20 +2,33 @@ import type { ApiStreamChunk, ApiStreamToolCallsChunk } from "../stream"
 import {
 	extractGemma4FinalResponse,
 	extractGemma4Thinking,
+	parseGemma4PartialToolCall,
 	parseGemma4ToolCalls,
 	type Gemma4ToolCall,
+	type Gemma4PartialToolCall,
 } from "./parser"
 
 export class Gemma4KesslerStreamAdapter {
 	private buffer = ""
 	private emittedToolCallCount = 0
 	private emittedThinking = false
+	private partialToolCall:
+		| {
+				index: number
+				id: string
+				name: string
+				emittedArgumentsText: string
+		  }
+		| undefined
 
 	push(delta: string): ApiStreamChunk[] {
 		this.buffer += delta
 		const chunks: ApiStreamChunk[] = []
 
 		this.pushThinkingIfComplete(chunks)
+		for (const chunk of this.newPartialToolCallChunks()) {
+			chunks.push(chunk)
+		}
 		for (const chunk of this.newToolCallChunks()) {
 			chunks.push(chunk)
 		}
@@ -27,7 +40,7 @@ export class Gemma4KesslerStreamAdapter {
 		const chunks: ApiStreamChunk[] = []
 		this.pushThinkingIfComplete(chunks)
 
-		for (const chunk of this.newToolCallChunks()) {
+		for (const chunk of this.newToolCallChunks({ allowUnterminatedAtEof: true })) {
 			chunks.push(chunk)
 		}
 
@@ -57,34 +70,95 @@ export class Gemma4KesslerStreamAdapter {
 		}
 	}
 
-	private newToolCallChunks(): ApiStreamToolCallsChunk[] {
-		const calls = parseGemma4ToolCalls(this.buffer)
+	private newToolCallChunks(options: { allowUnterminatedAtEof?: boolean } = {}): ApiStreamToolCallsChunk[] {
+		const calls = parseGemma4ToolCalls(this.buffer, options)
 		if (calls.length <= this.emittedToolCallCount) {
 			return []
 		}
 
 		const chunks: ApiStreamToolCallsChunk[] = []
 		for (let index = this.emittedToolCallCount; index < calls.length; index += 1) {
-			chunks.push(this.toToolCallChunk(calls[index], index))
+			const chunk = this.toToolCallChunk(calls[index], index)
+			if (chunk) {
+				chunks.push(chunk)
+			}
 		}
 		this.emittedToolCallCount = calls.length
 		return chunks
 	}
 
-	private toToolCallChunk(call: Gemma4ToolCall, index: number): ApiStreamToolCallsChunk {
-		const cleanArguments = stripNullish(call.arguments)
-		const callId = `call_gemma4_${index + 1}_${stableHash(`${call.name}:${JSON.stringify(cleanArguments)}`)}`
+	private newPartialToolCallChunks(): ApiStreamToolCallsChunk[] {
+		const partial = parseGemma4PartialToolCall(this.buffer)
+		if (!partial || partial.index < this.emittedToolCallCount) {
+			return []
+		}
+
+		if (!this.partialToolCall || this.partialToolCall.index !== partial.index || this.partialToolCall.name !== partial.name) {
+			this.partialToolCall = {
+				index: partial.index,
+				id: this.toolCallId(partial.index, partial.name),
+				name: partial.name,
+				emittedArgumentsText: "",
+			}
+		}
+
+		const nextArgumentsDelta = partial.argumentsText.slice(this.partialToolCall.emittedArgumentsText.length)
+		if (!nextArgumentsDelta) {
+			return []
+		}
+
+		this.partialToolCall.emittedArgumentsText = partial.argumentsText
+		return [this.toPartialToolCallChunk(partial, nextArgumentsDelta)]
+	}
+
+	private toPartialToolCallChunk(partial: Gemma4PartialToolCall, argumentsDelta: string): ApiStreamToolCallsChunk {
+		const id = this.partialToolCall?.id ?? this.toolCallId(partial.index, partial.name)
 		return {
 			type: "tool_calls",
+			partial: true,
+			tool_call: {
+				call_id: id,
+				function: {
+					id,
+					name: partial.name,
+					arguments: argumentsDelta,
+				},
+			},
+		}
+	}
+
+	private toToolCallChunk(call: Gemma4ToolCall, index: number): ApiStreamToolCallsChunk | undefined {
+		const cleanArguments = stripNullish(call.arguments)
+		const callId = this.toolCallId(index, call.name)
+		let argumentsText = JSON.stringify(cleanArguments)
+		if (this.partialToolCall?.index === index && this.partialToolCall.name === call.name) {
+			const alreadyEmitted = this.partialToolCall.emittedArgumentsText
+			if (argumentsText.startsWith(alreadyEmitted)) {
+				argumentsText = argumentsText.slice(alreadyEmitted.length)
+			} else {
+				argumentsText = ""
+			}
+			this.partialToolCall = undefined
+		}
+		if (!argumentsText) {
+			argumentsText = JSON.stringify(cleanArguments)
+		}
+		return {
+			type: "tool_calls",
+			partial: false,
 			tool_call: {
 				call_id: callId,
 				function: {
 					id: callId,
 					name: call.name,
-					arguments: JSON.stringify(cleanArguments),
+					arguments: argumentsText,
 				},
 			},
 		}
+	}
+
+	private toolCallId(index: number, name: string): string {
+		return `call_gemma4_${index + 1}_${stableHash(`${index}:${name}`)}`
 	}
 }
 
