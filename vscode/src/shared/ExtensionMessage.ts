@@ -346,6 +346,7 @@ export interface ClineApiReqInfo {
 	cacheWrites?: number
 	cacheReads?: number
 	cost?: number
+	localRuntime?: Record<string, unknown>
 	cancelReason?: ClineApiReqCancelReason
 	streamingFailedMessage?: string
 	retryStatus?: {

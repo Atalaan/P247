@@ -23,6 +23,7 @@ type UpdateApiReqMsgParams = {
 	cacheReadTokens: number
 	totalCost?: number
 	api: ApiHandler
+	localRuntime?: Record<string, unknown>
 	cancelReason?: ClineApiReqCancelReason
 	streamingFailedMessage?: string
 }
@@ -51,6 +52,7 @@ export const updateApiReqMsg = async (params: UpdateApiReqMsgParams) => {
 					params.cacheWriteTokens,
 					params.cacheReadTokens,
 				),
+			localRuntime: params.localRuntime ?? currentApiReqInfo.localRuntime,
 			cancelReason: params.cancelReason,
 			streamingFailedMessage: params.streamingFailedMessage,
 		} satisfies ClineApiReqInfo),

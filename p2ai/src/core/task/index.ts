@@ -2528,6 +2528,7 @@ export class Task {
 				inputTokens: number
 				outputTokens: number
 				totalCost: number | undefined
+				localRuntime?: Record<string, unknown>
 			} = { cacheWriteTokens: 0, cacheReadTokens: 0, inputTokens: 0, outputTokens: 0, totalCost: undefined }
 
 			const abortStream = async (cancelReason: ClineApiReqCancelReason, streamingFailedMessage?: string) => {
@@ -2556,6 +2557,7 @@ export class Task {
 					cacheReadTokens: taskMetrics.cacheReadTokens,
 					totalCost: taskMetrics.totalCost,
 					api: this.api,
+					localRuntime: taskMetrics.localRuntime,
 					cancelReason,
 					streamingFailedMessage,
 				})
@@ -2669,6 +2671,7 @@ export class Task {
 							taskMetrics.cacheWriteTokens += chunk.cacheWriteTokens ?? 0
 							taskMetrics.cacheReadTokens += chunk.cacheReadTokens ?? 0
 							taskMetrics.totalCost = chunk.totalCost ?? taskMetrics.totalCost
+							taskMetrics.localRuntime = chunk.localRuntime ?? taskMetrics.localRuntime
 							break
 						case "reasoning": {
 							// Process the reasoning delta through the handler
@@ -2856,6 +2859,7 @@ export class Task {
 						taskMetrics.cacheWriteTokens += apiStreamUsage.cacheWriteTokens ?? 0
 						taskMetrics.cacheReadTokens += apiStreamUsage.cacheReadTokens ?? 0
 						taskMetrics.totalCost = apiStreamUsage.totalCost ?? taskMetrics.totalCost
+						taskMetrics.localRuntime = apiStreamUsage.localRuntime ?? taskMetrics.localRuntime
 					}
 				})
 			}
@@ -2870,6 +2874,7 @@ export class Task {
 				cacheReadTokens: taskMetrics.cacheReadTokens,
 				api: this.api,
 				totalCost: taskMetrics.totalCost,
+				localRuntime: taskMetrics.localRuntime,
 			})
 			await this.messageStateHandler.saveClineMessagesAndUpdateHistory()
 			await this.postStateToWebview()

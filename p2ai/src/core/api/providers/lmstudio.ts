@@ -185,6 +185,7 @@ export class LmStudioHandler implements ApiHandler {
 				}
 
 				if (chunk.usage) {
+					const localRuntime = (chunk as unknown as { p2ai_runtime?: Record<string, unknown> }).p2ai_runtime
 					recordLlmUsageArtifact({
 						stack: "lmstudio_vscode_c2ai",
 						route: "openai_chat_native",
@@ -198,6 +199,7 @@ export class LmStudioHandler implements ApiHandler {
 						inputTokens: chunk.usage.prompt_tokens || 0,
 						outputTokens: chunk.usage.completion_tokens || 0,
 						cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
+						localRuntime,
 					}
 				}
 			}
@@ -392,6 +394,7 @@ export class LmStudioHandler implements ApiHandler {
 				}
 			}
 			if (chunk.usage) {
+				const localRuntime = (chunk as unknown as { p2ai_runtime?: Record<string, unknown> }).p2ai_runtime
 				recordLlmUsageArtifact({
 					stack: "lmstudio_vscode_c2ai",
 					route: "gemma4_kessler_completion",
@@ -407,6 +410,7 @@ export class LmStudioHandler implements ApiHandler {
 					inputTokens: chunk.usage.prompt_tokens || 0,
 					outputTokens: chunk.usage.completion_tokens || 0,
 					cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
+					localRuntime,
 				}
 			}
 		}

@@ -25,6 +25,7 @@ export interface ApiStreamUsageChunk {
 	cacheReadTokens?: number
 	thoughtsTokenCount?: number // openrouter
 	totalCost?: number // openrouter
+	localRuntime?: Record<string, unknown>
 	/**
 	 * The response ID associated with this response
 	 */

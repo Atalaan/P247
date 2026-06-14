@@ -107,11 +107,13 @@ export class LmStudioHandler implements ApiHandler {
 				}
 
 				if (chunk.usage) {
+					const localRuntime = (chunk as unknown as { p2ai_runtime?: Record<string, unknown> }).p2ai_runtime
 					yield {
 						type: "usage",
 						inputTokens: chunk.usage.prompt_tokens || 0,
 						outputTokens: chunk.usage.completion_tokens || 0,
 						cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
+						localRuntime,
 					}
 				}
 			}
@@ -179,11 +181,13 @@ export class LmStudioHandler implements ApiHandler {
 					}
 				}
 				if (chunk.usage) {
+					const localRuntime = (chunk as unknown as { p2ai_runtime?: Record<string, unknown> }).p2ai_runtime
 					yield {
 						type: "usage",
 						inputTokens: chunk.usage.prompt_tokens || 0,
 						outputTokens: chunk.usage.completion_tokens || 0,
 						cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens || 0,
+						localRuntime,
 					}
 				}
 			}

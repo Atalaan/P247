@@ -1,4 +1,4 @@
-import type { ClineMessage, ClineSayTool } from "@shared/ExtensionMessage"
+import type { ClineApiReqInfo, ClineMessage, ClineSayTool } from "@shared/ExtensionMessage"
 import type { Mode } from "@shared/storage/types"
 import type { LucideIcon } from "lucide-react"
 import type React from "react"
@@ -26,6 +26,61 @@ interface RequestStartRowProps {
 
 // State type for api_req_started rendering
 type ApiReqState = "pre" | "thinking" | "error" | "final"
+
+const numberValue = (value: unknown): number | undefined => {
+	return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+const stringValue = (value: unknown): string | undefined => {
+	return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+const formatTimestamp = (ms: number): string => {
+	const d = new Date(ms)
+	const pad = (n: number) => n.toString().padStart(2, "0")
+	return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(
+		d.getMinutes(),
+	)}:${pad(d.getSeconds())}`
+}
+
+const formatSeconds = (seconds: number): string => `${seconds.toFixed(seconds >= 10 ? 1 : 2)}s`
+
+const formatLocalRuntimeMetadata = (metadata: Record<string, unknown> | undefined): string | null => {
+	if (!metadata) {
+		return null
+	}
+	const createdAtMs = numberValue(metadata.created_at_ms)
+	const wallclockMs = numberValue(metadata.sidecar_llm_wallclock_ms)
+	const runtime = stringValue(metadata.runtime) ?? "local"
+	const backend = stringValue(metadata.backend)
+	const model = stringValue(metadata.model_id)
+	const gpuLayers = numberValue(metadata.gpu_layers_effective)
+	const contextWindow = numberValue(metadata.context_window_effective)
+	const ttft = numberValue(metadata.native_time_to_first_token_sec)
+	const tps = numberValue(metadata.native_visible_tokens_per_second) ?? numberValue(metadata.native_tokens_per_second)
+	const inputTokens = numberValue(metadata.prompt_tokens)
+	const outputTokens = numberValue(metadata.completion_tokens)
+	const replyChars = numberValue(metadata.output_chars)
+	const finish = stringValue(metadata.native_stop_reason)
+
+	const parts = [
+		createdAtMs ? formatTimestamp(createdAtMs) : undefined,
+		wallclockMs != null ? formatSeconds(wallclockMs / 1000) : undefined,
+		backend ? `local ${runtime}/${backend}` : `local ${runtime}`,
+		model,
+		gpuLayers != null ? `gpu ${gpuLayers}` : undefined,
+		contextWindow != null ? `ctx ${contextWindow}` : undefined,
+		ttft != null ? `ttft ${formatSeconds(ttft)}` : undefined,
+		tps != null ? `gen ${tps.toFixed(1)} tok/s` : undefined,
+		inputTokens != null ? `input ${inputTokens} tok` : undefined,
+		outputTokens != null ? `output ${outputTokens} tok` : undefined,
+		"reasoning 0 chars",
+		replyChars != null ? `reply ${replyChars} chars` : undefined,
+		finish ? `finish ${finish}` : undefined,
+	].filter(Boolean)
+
+	return parts.join(" - ")
+}
 
 // Helper to format search regex for display - show all terms separated by |
 const formatSearchRegex = (regex: string, path: string, filePattern?: string): string => {
@@ -149,6 +204,17 @@ export const RequestStartRow: React.FC<RequestStartRowProps> = ({
 	)
 
 	const apiReqState: ApiReqState = hasError ? "error" : hasCost ? "final" : hasReasoning ? "thinking" : "pre"
+	const localRuntimeSummary = useMemo(() => {
+		if (message.say !== "api_req_started" || !message.text) {
+			return null
+		}
+		try {
+			const info = JSON.parse(message.text) as ClineApiReqInfo
+			return formatLocalRuntimeMetadata(info.localRuntime)
+		} catch {
+			return null
+		}
+	}, [message.say, message.text])
 
 	// While reasoning is streaming, keep the Brain ThinkingBlock exactly as-is.
 	// Once response content starts (any text/tool/command), collapse into a compact
@@ -254,6 +320,9 @@ export const RequestStartRow: React.FC<RequestStartRowProps> = ({
 					errorType="error"
 					message={message}
 				/>
+			)}
+			{localRuntimeSummary && (
+				<div className="ml-1 mt-1 text-[11px] leading-4 text-description break-words">{localRuntimeSummary}</div>
 			)}
 		</div>
 	)
