@@ -432,6 +432,7 @@ export class Task {
 		const effectiveApiConfiguration: ApiConfiguration = {
 			...apiConfiguration,
 			ulid: this.ulid,
+			taskId: this.taskId,
 			onRetryAttempt: async (attempt: number, maxRetries: number, delay: number, error: any) => {
 				const clineMessages = this.messageStateHandler.getClineMessages()
 				const lastApiReqStartedIndex = findLastIndex(clineMessages, (m) => m.say === "api_req_started")
@@ -1337,29 +1338,35 @@ export class Task {
 	private async initiateTaskLoop(userContent: ClineContent[]): Promise<void> {
 		let nextUserContent = userContent
 		let includeFileDetails = true
-		while (!this.taskState.abort) {
-			const didEndLoop = await this.recursivelyMakeClineRequests(nextUserContent, includeFileDetails)
-			includeFileDetails = false // we only need file details the first time
+		this.taskState.currentP2AiRunOrdinal += 1
+		this.taskState.currentP2AiTaskRunId = `p247-run-${this.ulid}-${this.taskState.currentP2AiRunOrdinal}-${ulid().toLowerCase()}`
+		try {
+			while (!this.taskState.abort) {
+				const didEndLoop = await this.recursivelyMakeClineRequests(nextUserContent, includeFileDetails)
+				includeFileDetails = false // we only need file details the first time
 
-			//  The way this agentic loop works is that cline will be given a task that he then calls tools to complete. unless there's an attempt_completion call, we keep responding back to him with his tool's responses until he either attempt_completion or does not use anymore tools. If he does not use anymore tools, we ask him to consider if he's completed the task and then call attempt_completion, otherwise proceed with completing the task.
+				//  The way this agentic loop works is that cline will be given a task that he then calls tools to complete. unless there's an attempt_completion call, we keep responding back to him with his tool's responses until he either attempt_completion or does not use anymore tools. If he does not use anymore tools, we ask him to consider if he's completed the task and then call attempt_completion, otherwise proceed with completing the task.
 
-			//const totalCost = this.calculateApiCost(totalInputTokens, totalOutputTokens)
-			if (didEndLoop) {
-				// For now a task never 'completes'. This will only happen if the user hits max requests and denies resetting the count.
-				//this.say("task_completed", `Task completed. Total API usage cost: ${totalCost}`)
-				break
+				//const totalCost = this.calculateApiCost(totalInputTokens, totalOutputTokens)
+				if (didEndLoop) {
+					// For now a task never 'completes'. This will only happen if the user hits max requests and denies resetting the count.
+					//this.say("task_completed", `Task completed. Total API usage cost: ${totalCost}`)
+					break
+				}
+				// this.say(
+				// 	"tool",
+				// 	"Cline responded with only text blocks but has not called attempt_completion yet. Forcing him to continue with task..."
+				// )
+				nextUserContent = [
+					{
+						type: "text",
+						text: formatResponse.noToolsUsed(this.useNativeToolCalls),
+					},
+				]
+				this.taskState.consecutiveMistakeCount++
 			}
-			// this.say(
-			// 	"tool",
-			// 	"Cline responded with only text blocks but has not called attempt_completion yet. Forcing him to continue with task..."
-			// )
-			nextUserContent = [
-				{
-					type: "text",
-					text: formatResponse.noToolsUsed(this.useNativeToolCalls),
-				},
-			]
-			this.taskState.consecutiveMistakeCount++
+		} finally {
+			this.taskState.currentP2AiTaskRunId = undefined
 		}
 	}
 
@@ -1884,6 +1891,13 @@ export class Task {
 			tools,
 			providerInfo,
 		})
+
+		if (this.taskState.currentP2AiTaskRunId && this.api.setP2AiRunContext) {
+			this.api.setP2AiRunContext({
+				p247TaskRunId: this.taskState.currentP2AiTaskRunId,
+				runOrdinal: this.taskState.currentP2AiRunOrdinal,
+			})
+		}
 
 		const contextManagementMetadata = await this.contextManager.getNewContextMessagesAndMetadata(
 			this.messageStateHandler.getApiConversationHistory(),

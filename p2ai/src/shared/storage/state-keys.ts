@@ -123,6 +123,7 @@ const API_HANDLER_SETTINGS_FIELDS = {
 	p2aiLocalMaxNewTokens: { default: "1024" as string },
 	p2aiLocalThreads: { default: "5" as string },
 	p2aiLocalBaseUrl: { default: undefined as string | undefined },
+	p2aiLocalFeedbackLoopEnabled: { default: false as boolean },
 	p2aiLocalToolProtocolProfile: {
 		default: "gemma4-kessler" as "openai-native" | "gemma4-kessler" | "gpt-oss-harmony",
 	},

@@ -11,6 +11,12 @@ export interface Gemma4PartialToolCall {
 	argumentsText: string
 }
 
+export interface Gemma4ThinkingProgress {
+	thinking: string
+	complete: boolean
+	detected: boolean
+}
+
 const callPrefix = "call:"
 const stringMarker = "\x00"
 const toolCallStartMarker = "<|tool_call>"
@@ -116,11 +122,20 @@ export function parseGemma4PartialToolCall(text: string): Gemma4PartialToolCall 
 }
 
 export function extractGemma4Thinking(text: string): { thinking: string; complete: boolean } {
+	const progress = extractGemma4ThinkingProgress(text)
+	return {
+		thinking: progress.complete ? progress.thinking.trim() : "",
+		complete: progress.complete,
+	}
+}
+
+export function extractGemma4ThinkingProgress(text: string): Gemma4ThinkingProgress {
 	const tokens = tokenizeGemma4(text)
 	let inChannel = false
 	let sawChannelEnd = false
 	let channelText = ""
 	let thinking = ""
+	let detected = false
 
 	for (const token of tokens) {
 		if (token.type === "CHANNEL_START") {
@@ -131,13 +146,10 @@ export function extractGemma4Thinking(text: string): { thinking: string; complet
 		if (token.type === "CHANNEL_END") {
 			inChannel = false
 			sawChannelEnd = true
-			const trimmed = channelText.trimStart()
-			if (trimmed.startsWith("thought\n")) {
-				thinking = trimmed.slice("thought\n".length).trim()
-			} else if (trimmed.startsWith("thought")) {
-				thinking = trimmed.slice("thought".length).trim()
-			} else {
-				thinking = trimmed.trim()
+			const normalized = normalizeGemma4ThinkingChannelText(channelText)
+			if (normalized !== null) {
+				thinking = normalized
+				detected = true
 			}
 			continue
 		}
@@ -146,7 +158,36 @@ export function extractGemma4Thinking(text: string): { thinking: string; complet
 		}
 	}
 
-	return { thinking, complete: sawChannelEnd }
+	if (inChannel) {
+		const normalized = normalizeGemma4ThinkingChannelText(channelText)
+		if (normalized !== null) {
+			thinking = normalized
+			detected = true
+		}
+	}
+
+	return { thinking, complete: sawChannelEnd && detected, detected }
+}
+
+function normalizeGemma4ThinkingChannelText(channelText: string): string | null {
+	const trimmed = channelText.trimStart()
+	if (!trimmed) {
+		return null
+	}
+	if (trimmed.startsWith("thought\n")) {
+		return trimmed.slice("thought\n".length)
+	}
+	if (trimmed === "thought" || "thought".startsWith(trimmed)) {
+		return ""
+	}
+	if (trimmed.startsWith("thought")) {
+		const remainder = trimmed.slice("thought".length)
+		if (remainder.startsWith("\n")) {
+			return remainder.slice(1)
+		}
+		return ""
+	}
+	return trimmed
 }
 
 export function extractGemma4FinalResponse(text: string): string {

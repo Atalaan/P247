@@ -29,11 +29,14 @@ interface LmStudioHandlerOptions extends CommonApiHandlerOptions {
 	lmStudioBaseUrl?: string
 	lmStudioModelId?: string
 	lmStudioMaxTokens?: string
+	p2aiLocalFeedbackLoopEnabled?: boolean | string
 }
 
 export class LmStudioHandler implements ApiHandler {
 	private options: LmStudioHandlerOptions
 	private client: OpenAI | undefined
+	private p2aiRunContext: { p247TaskRunId: string; runOrdinal?: number } | undefined
+	private p2aiCompletionAttemptSeq = 0
 
 	constructor(options: LmStudioHandlerOptions) {
 		this.options = options
@@ -44,6 +47,13 @@ export class LmStudioHandler implements ApiHandler {
 			try {
 				const configuredBaseUrl = this.options.lmStudioBaseUrl || "http://localhost:1234"
 				const apiStyle = process.env.P2AI_CLINE_LMSTUDIO_API_STYLE
+				const timeoutMs = Number(process.env.P2AI_C2AI_OPENAI_TIMEOUT_MS)
+				const localRuntimeTimeoutMs =
+					Number.isFinite(timeoutMs) && timeoutMs > 0
+						? timeoutMs
+						: this.useGemma4KesslerProtocol() || this.useGptOssHarmonyProtocol()
+							? 20 * 60 * 1000
+							: undefined
 				const baseURL =
 					apiStyle === "llamacpp_v1" || configuredBaseUrl.replace(/\/+$/, "").endsWith("/v1")
 						? configuredBaseUrl.replace(/\/+$/, "")
@@ -52,6 +62,7 @@ export class LmStudioHandler implements ApiHandler {
 					// Docs on the new v0 api endpoint: https://lmstudio.ai/docs/app/api/endpoints/rest
 					baseURL,
 					apiKey: "noop",
+					timeout: localRuntimeTimeoutMs,
 				})
 			} catch (error) {
 				throw new Error(`Error creating LM Studio client: ${error.message}`)
@@ -93,6 +104,41 @@ export class LmStudioHandler implements ApiHandler {
 			return parsed
 		}
 		return undefined
+	}
+
+	setP2AiRunContext(context: { p247TaskRunId: string; runOrdinal?: number }): void {
+		this.p2aiRunContext = context
+	}
+
+	private feedbackLoopEnabled(): boolean {
+		const value = process.env.P2AI_C2AI_FEEDBACK_LOOP_ENABLED ?? this.options.p2aiLocalFeedbackLoopEnabled
+		return value === true || value === "true" || value === "1"
+	}
+
+	private p2aiRequestOptions(): { headers?: Record<string, string> } {
+		this.p2aiCompletionAttemptSeq += 1
+		const context = this.p2aiRunContext
+		const headers: Record<string, string> = {
+			"X-P2AI-Source-System": "p247_cline",
+			"X-P2AI-Feedback-Loop-Enabled": this.feedbackLoopEnabled() ? "true" : "false",
+			"X-P2AI-Feedback-Loop-Runtime-Scope": "local_runtime_only",
+			"X-P2AI-Completion-Attempt-Id": context?.p247TaskRunId
+				? `${context.p247TaskRunId}:llm:${this.p2aiCompletionAttemptSeq}`
+				: `p247-llm:${this.p2aiCompletionAttemptSeq}`,
+		}
+		if (this.options.taskId) {
+			headers["X-P2AI-Task-Id"] = this.options.taskId
+		}
+		if (this.options.ulid) {
+			headers["X-P2AI-Task-Ulid"] = this.options.ulid
+		}
+		if (context?.p247TaskRunId) {
+			headers["X-P2AI-Task-Run-Id"] = context.p247TaskRunId
+		}
+		if (context?.runOrdinal != null) {
+			headers["X-P2AI-Run-Ordinal"] = String(context.runOrdinal)
+		}
+		return { headers }
 	}
 
 	@withRetry({ retryAllErrors: true })
@@ -141,7 +187,7 @@ export class LmStudioHandler implements ApiHandler {
 				stream_options: { include_usage: true },
 				max_completion_tokens: this.completionCap(),
 				...getOpenAIToolParams(tools),
-			})
+			}, this.p2aiRequestOptions())
 
 			const toolCallProcessor = new ToolCallProcessor()
 			let chunkIndex = 0
@@ -358,7 +404,7 @@ export class LmStudioHandler implements ApiHandler {
 			max_tokens: maxTokens,
 			temperature: 0,
 			stop: ["<turn|>"],
-		})
+		}, this.p2aiRequestOptions())
 		const adapter = new Gemma4KesslerStreamAdapter()
 		let chunkIndex = 0
 
@@ -574,7 +620,7 @@ export class LmStudioHandler implements ApiHandler {
 			max_tokens: maxTokens,
 			temperature: 0,
 			stop: ["<|return|>"],
-		})
+		}, this.p2aiRequestOptions())
 		const adapter = new GptOssHarmonyStreamAdapter()
 
 		for await (const chunk of stream) {

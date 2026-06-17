@@ -1,4 +1,4 @@
-import { memo } from "react"
+import { memo, useEffect, useState } from "react"
 import { cn } from "@/lib/utils"
 import { MarkdownRow } from "./MarkdownRow"
 import { Int64Request } from "@shared/proto/cline/common"
@@ -8,6 +8,7 @@ import { TaskServiceClient } from "@/services/grpc-client"
 import { CopyButton } from "../common/CopyButton"
 import SuccessButton from "../common/SuccessButton"
 import { QuoteButtonState } from "./ChatRow"
+import { P2AiRunFeedbackTray, p2aiCompletionAnswerMessageId, p2aiTextSha256 } from "./P2AiRunFeedbackTray"
 import QuoteButton from "./QuoteButton"
 
 interface CompletionOutputRowProps {
@@ -16,11 +17,14 @@ interface CompletionOutputRowProps {
 	handleQuoteClick: () => void
 	headClassNames?: string
 	showActionRow?: boolean
+	showFeedbackTray?: boolean
 	seeNewChangesDisabled: boolean
 	setSeeNewChangesDisabled: (value: boolean) => void
 	explainChangesDisabled: boolean
 	setExplainChangesDisabled: (value: boolean) => void
 	messageTs: number
+	metadataSummary?: string | null
+	runtimeMetadata?: Record<string, unknown>
 }
 
 export const CompletionOutputRow = memo(
@@ -29,13 +33,47 @@ export const CompletionOutputRow = memo(
 		text,
 		quoteButtonState,
 		showActionRow,
+		showFeedbackTray,
 		seeNewChangesDisabled,
 		setSeeNewChangesDisabled,
 		explainChangesDisabled,
 		setExplainChangesDisabled,
 		messageTs,
 		handleQuoteClick,
+		metadataSummary,
+		runtimeMetadata,
 	}: CompletionOutputRowProps) => {
+		const [answerTextSha256, setAnswerTextSha256] = useState<string | undefined>()
+
+		useEffect(() => {
+			let cancelled = false
+			if (text.trim().length === 0) {
+				setAnswerTextSha256(undefined)
+				return
+			}
+			p2aiTextSha256(text)
+				.then((hash) => {
+					if (!cancelled) {
+						setAnswerTextSha256(hash)
+					}
+				})
+				.catch(() => {
+					if (!cancelled) {
+						setAnswerTextSha256(undefined)
+					}
+				})
+			return () => {
+				cancelled = true
+			}
+		}, [text])
+
+		const answerMessageId = p2aiCompletionAnswerMessageId({
+			messageTs,
+			runtimeMetadata,
+			text,
+			textSha256: answerTextSha256,
+		})
+
 		return (
 			<div>
 				<div className="rounded-sm border border-success/20 overflow-visible bg-success/10 p-2 pt-3">
@@ -47,6 +85,9 @@ export const CompletionOutputRow = memo(
 						</div>
 						<CopyButton className="text-success" textToCopy={text} />
 					</div>
+					{metadataSummary ? (
+						<div className="px-1 pt-1 text-[11px] leading-4 text-description break-words">{metadataSummary}</div>
+					) : null}
 					{/* Content */}
 					<div className="w-full relative border-t-1 border-description/20 rounded-b-sm">
 						<div className="completion-output-content p-2 pt-3 w-full [&_hr]:opacity-20 [&_p:last-child]:mb-0 rounded-sm">
@@ -57,6 +98,15 @@ export const CompletionOutputRow = memo(
 						</div>
 					</div>
 				</div>
+				{showFeedbackTray && (
+					<P2AiRunFeedbackTray
+						answerMessageId={answerMessageId}
+						answerText={text}
+						answerTextSha256={answerTextSha256}
+						completionResultTs={messageTs}
+						runtimeMetadata={runtimeMetadata}
+					/>
+				)}
 				{/* Action Buttons */}
 				{showActionRow && (
 					<CompletionOutputActionRow

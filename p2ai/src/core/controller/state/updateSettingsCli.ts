@@ -121,6 +121,7 @@ export async function updateSettingsCli(controller: Controller, request: UpdateS
 				const apiConfigForHandler = {
 					...controller.stateManager.getApiConfiguration(),
 					ulid: controller.task.ulid,
+					taskId: controller.task.taskId,
 				}
 				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode)
 			}

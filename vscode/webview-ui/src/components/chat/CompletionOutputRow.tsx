@@ -21,6 +21,7 @@ interface CompletionOutputRowProps {
 	explainChangesDisabled: boolean
 	setExplainChangesDisabled: (value: boolean) => void
 	messageTs: number
+	metadataSummary?: string | null
 }
 
 export const CompletionOutputRow = memo(
@@ -35,6 +36,7 @@ export const CompletionOutputRow = memo(
 		setExplainChangesDisabled,
 		messageTs,
 		handleQuoteClick,
+		metadataSummary,
 	}: CompletionOutputRowProps) => {
 		return (
 			<div>
@@ -47,6 +49,9 @@ export const CompletionOutputRow = memo(
 						</div>
 						<CopyButton className="text-success" textToCopy={text} />
 					</div>
+					{metadataSummary ? (
+						<div className="px-1 pt-1 text-[11px] leading-4 text-description break-words">{metadataSummary}</div>
+					) : null}
 					{/* Content */}
 					<div className="w-full relative border-t-1 border-description/20 rounded-b-sm">
 						<div className="completion-output-content p-2 pt-3 w-full [&_hr]:opacity-20 [&_p:last-child]:mb-0 rounded-sm">

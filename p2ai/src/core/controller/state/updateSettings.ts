@@ -52,6 +52,7 @@ export async function updateSettings(controller: Controller, request: UpdateSett
 				const apiConfigForHandler = {
 					...convertedApiConfigurationFromProto,
 					ulid: controller.task.ulid,
+					taskId: controller.task.taskId,
 				}
 				controller.task.api = buildApiHandler(apiConfigForHandler, currentMode)
 			}

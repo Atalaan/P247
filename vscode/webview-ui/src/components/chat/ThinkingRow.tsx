@@ -12,6 +12,7 @@ interface ThinkingRowProps {
 	title?: string
 	isStreaming?: boolean
 	showChevron?: boolean
+	metadataSummary?: string | null
 }
 
 export const ThinkingRow = memo(
@@ -24,6 +25,7 @@ export const ThinkingRow = memo(
 		title = "Thinking",
 		isStreaming = false,
 		showChevron = true,
+		metadataSummary,
 	}: ThinkingRowProps) => {
 	const scrollRef = useRef<HTMLDivElement>(null)
 	const [canScrollUp, setCanScrollUp] = useState(false)
@@ -84,6 +86,9 @@ export const ThinkingRow = memo(
 							<ChevronRightIcon className="!size-1 text-description" />
 						))}
 				</Button>
+			) : null}
+			{metadataSummary ? (
+				<div className="mt-1 text-[11px] leading-4 text-description break-words">{metadataSummary}</div>
 			) : null}
 
 			{isExpanded && (

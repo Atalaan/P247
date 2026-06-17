@@ -44,7 +44,10 @@ export async function updateApiConfigurationPartial(
 		controller.stateManager.setApiConfiguration(updatedConfig)
 		if (controller.task) {
 			const currentMode = controller.stateManager.getGlobalSettingsKey("mode")
-			controller.task.api = buildApiHandler({ ...updatedConfig, ulid: controller.task.ulid }, currentMode)
+			controller.task.api = buildApiHandler(
+				{ ...updatedConfig, ulid: controller.task.ulid, taskId: controller.task.taskId },
+				currentMode,
+			)
 		}
 
 		// Notify webview

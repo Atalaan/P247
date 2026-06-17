@@ -48,11 +48,14 @@ import { ApiStream, ApiStreamUsageChunk } from "./transform/stream"
 
 export type CommonApiHandlerOptions = {
 	onRetryAttempt?: ApiConfiguration["onRetryAttempt"]
+	ulid?: ApiConfiguration["ulid"]
+	taskId?: ApiConfiguration["taskId"]
 }
 export interface ApiHandler {
 	createMessage(systemPrompt: string, messages: ClineStorageMessage[], tools?: ClineTool[], useResponseApi?: boolean): ApiStream
 	getModel(): ApiHandlerModel
 	getApiStreamUsage?(): Promise<ApiStreamUsageChunk | undefined>
+	setP2AiRunContext?(context: { p247TaskRunId: string; runOrdinal?: number }): void
 	abort?(): void
 }
 
@@ -159,9 +162,12 @@ function createHandlerForProvider(
 		case "lmstudio":
 			return new LmStudioHandler({
 				onRetryAttempt: options.onRetryAttempt,
+				ulid: options.ulid,
+				taskId: options.taskId,
 				lmStudioBaseUrl: options.lmStudioBaseUrl,
 				lmStudioModelId: mode === "plan" ? options.planModeLmStudioModelId : options.actModeLmStudioModelId,
 				lmStudioMaxTokens: options.lmStudioMaxTokens,
+				p2aiLocalFeedbackLoopEnabled: options.p2aiLocalFeedbackLoopEnabled,
 			})
 		case "gemini":
 			return new GeminiHandler({

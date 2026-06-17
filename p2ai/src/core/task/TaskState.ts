@@ -53,6 +53,10 @@ export class TaskState {
 	// Task Initialization
 	isInitialized = false
 
+	// P2AI shadow run identity. This is separate from provider/native call ids.
+	currentP2AiTaskRunId?: string
+	currentP2AiRunOrdinal = 0
+
 	// Focus Chain / Todo List Management
 	apiRequestCount = 0
 	apiRequestsSinceLastTodoUpdate = 0

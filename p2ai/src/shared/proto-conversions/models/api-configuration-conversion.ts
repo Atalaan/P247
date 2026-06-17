@@ -18,6 +18,13 @@ import {
 } from "../../api"
 import { OpenaiReasoningEffort } from "../../storage/types"
 
+function convertBooleanLikeToProto(value: unknown): boolean | undefined {
+	if (value == null) {
+		return undefined
+	}
+	return value === true || value === "true" || value === "1"
+}
+
 // Convert application ThinkingConfig to proto ThinkingConfig
 function convertThinkingConfigToProto(config: ModelInfo["thinkingConfig"]): ThinkingConfig | undefined {
 	if (!config) {
@@ -509,6 +516,7 @@ export function convertApiConfigurationToProto(config: ApiConfiguration): ProtoA
 		aihubmixAppCode: config.aihubmixAppCode,
 		hicapApiKey: config.hicapApiKey,
 		hicapModelId: config.hicapModelId,
+		p2aiLocalFeedbackLoopEnabled: convertBooleanLikeToProto(config.p2aiLocalFeedbackLoopEnabled),
 
 		// Plan mode configurations
 		planModeApiProvider: config.planModeApiProvider ? convertApiProviderToProto(config.planModeApiProvider) : undefined,
@@ -684,6 +692,7 @@ export function convertProtoToApiConfiguration(protoConfig: ProtoApiConfiguratio
 		hicapModelId: protoConfig.hicapModelId,
 		nousResearchApiKey: protoConfig.nousResearchApiKey,
 		clineApiKey: protoConfig.clineApiKey,
+		p2aiLocalFeedbackLoopEnabled: protoConfig.p2aiLocalFeedbackLoopEnabled,
 
 		// Plan mode configurations
 		planModeApiProvider:

@@ -54,6 +54,7 @@ import { CompletionOutputRow } from "./CompletionOutputRow"
 import { DiffEditRow } from "./DiffEditRow"
 import ErrorRow from "./ErrorRow"
 import HookMessage from "./HookMessage"
+import { findLocalRuntimeMetadataForMessage } from "./LocalRuntimeMetadata"
 import { MarkdownRow } from "./MarkdownRow"
 import NewTaskPreview from "./NewTaskPreview"
 import PlanCompletionOutputRow from "./PlanCompletionOutputRow"
@@ -205,6 +206,36 @@ export const ChatRowContent = memo(
 			}
 			return [undefined, undefined, undefined, undefined, undefined]
 		}, [message.text, message.say])
+		const localRuntimeSummary = useMemo(
+			() => findLocalRuntimeMetadataForMessage(message, clineMessages),
+			[message, clineMessages],
+		)
+		const messageIndex = useMemo(
+			() =>
+				clineMessages.findIndex(
+					(candidate) =>
+						candidate.ts === message.ts &&
+						candidate.type === message.type &&
+						candidate.say === message.say &&
+						candidate.ask === message.ask,
+				),
+			[clineMessages, message],
+		)
+		const hasLaterResponseContent = useMemo(() => {
+			if (messageIndex < 0) {
+				return false
+			}
+			return clineMessages.slice(messageIndex + 1).some((candidate) => {
+				const candidateType = candidate.type === "ask" ? candidate.ask : candidate.say
+				return (
+					candidateType === "completion_result" ||
+					candidateType === "tool" ||
+					candidateType === "command" ||
+					candidateType === "text" ||
+					candidateType === "plan_mode_respond"
+				)
+			})
+		}, [clineMessages, messageIndex])
 
 		// when resuming task last won't be api_req_failed but a resume_task message so api_req_started will show loading spinner. that's why we just remove the last api_req_started that failed without streaming anything
 		const apiRequestFailedMessage =
@@ -888,16 +919,18 @@ export const ChatRowContent = memo(
 					case "reasoning": {
 						const isReasoningStreaming = message.partial === true
 						const hasReasoningText = !!message.text?.trim()
+						const compactAfterResponse = hasLaterResponseContent
 						return (
 							<ThinkingRow
-								isExpanded={(isReasoningStreaming && hasReasoningText) || isExpanded}
-								isStreaming={isReasoningStreaming}
+								isExpanded={compactAfterResponse ? isExpanded : (isReasoningStreaming && hasReasoningText) || isExpanded}
+								isStreaming={isReasoningStreaming && !compactAfterResponse}
 								isVisible={true}
-								onToggle={isReasoningStreaming ? undefined : handleToggle}
+								onToggle={isReasoningStreaming && !compactAfterResponse ? undefined : handleToggle}
 								reasoningContent={message.text}
-								showChevron={!isReasoningStreaming || hasReasoningText}
-								title={isReasoningStreaming ? "Thinking..." : "Thinking"}
+								showChevron={compactAfterResponse || !isReasoningStreaming || hasReasoningText}
+								title={isReasoningStreaming && !compactAfterResponse ? "Thinking..." : "Thinking"}
 								showTitle={true}
+								metadataSummary={localRuntimeSummary}
 							/>
 						)
 					}
@@ -1022,6 +1055,7 @@ export const ChatRowContent = memo(
 								setSeeNewChangesDisabled={setSeeNewChangesDisabled}
 								showActionRow={message.partial !== true && hasChanges}
 								text={text || ""}
+								metadataSummary={localRuntimeSummary}
 							/>
 						)
 					case "shell_integration_warning":
@@ -1169,6 +1203,7 @@ export const ChatRowContent = memo(
 									setSeeNewChangesDisabled={setSeeNewChangesDisabled}
 									showActionRow={message.partial !== true && hasChanges}
 									text={text || ""}
+									metadataSummary={localRuntimeSummary}
 								/>
 							)
 						}

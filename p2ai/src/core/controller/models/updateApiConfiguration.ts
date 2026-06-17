@@ -146,6 +146,7 @@ export async function updateApiConfiguration(controller: Controller, request: Up
 				{
 					...controller.stateManager.getApiConfiguration(),
 					ulid: controller.task.ulid,
+					taskId: controller.task.taskId,
 				},
 				currentMode,
 			)

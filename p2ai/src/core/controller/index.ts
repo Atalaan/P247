@@ -374,7 +374,10 @@ export class Controller {
 		// Update API handler with new mode (buildApiHandler now selects provider based on mode)
 		if (this.task) {
 			const apiConfiguration = this.stateManager.getApiConfiguration()
-			this.task.api = buildApiHandler({ ...apiConfiguration, ulid: this.task.ulid }, modeToSwitchTo)
+			this.task.api = buildApiHandler(
+				{ ...apiConfiguration, ulid: this.task.ulid, taskId: this.task.taskId },
+				modeToSwitchTo,
+			)
 		}
 
 		await this.postStateToWebview()
@@ -398,7 +401,10 @@ export class Controller {
 		// Update API handler with new mode (buildApiHandler now selects provider based on mode)
 		if (this.task) {
 			const apiConfiguration = this.stateManager.getApiConfiguration()
-			this.task.api = buildApiHandler({ ...apiConfiguration, ulid: this.task.ulid }, modeToSwitchTo)
+			this.task.api = buildApiHandler(
+				{ ...apiConfiguration, ulid: this.task.ulid, taskId: this.task.taskId },
+				modeToSwitchTo,
+			)
 		}
 
 		await this.postStateToWebview()
@@ -548,7 +554,7 @@ export class Controller {
 			await fetchRemoteConfig(this)
 
 			if (this.task) {
-				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid, taskId: this.task.taskId }, currentMode)
 			}
 
 			await this.postStateToWebview()
@@ -599,7 +605,7 @@ export class Controller {
 			this.stateManager.setGlobalState("welcomeViewCompleted", true)
 
 			if (this.task) {
-				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+				this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid, taskId: this.task.taskId }, currentMode)
 			}
 
 			await this.postStateToWebview()
@@ -717,7 +723,7 @@ export class Controller {
 
 		await this.postStateToWebview()
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid, taskId: this.task.taskId }, currentMode)
 		}
 		// Dont send settingsButtonClicked because its bad ux if user is on welcome
 	}
@@ -737,7 +743,7 @@ export class Controller {
 		this.stateManager.setApiConfiguration(updatedConfig)
 		await this.postStateToWebview()
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid, taskId: this.task.taskId }, currentMode)
 		}
 	}
 
@@ -777,7 +783,7 @@ export class Controller {
 		await this.postStateToWebview()
 		this.accountService
 		if (this.task) {
-			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid }, currentMode)
+			this.task.api = buildApiHandler({ ...updatedConfig, ulid: this.task.ulid, taskId: this.task.taskId }, currentMode)
 		}
 	}
 

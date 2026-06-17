@@ -125,7 +125,7 @@ export async function updateApiConfigurationProto(
 		if (controller.task) {
 			const currentMode = controller.stateManager.getGlobalSettingsKey("mode")
 			controller.task.api = buildApiHandler(
-				{ ...convertedApiConfigurationFromProto, ulid: controller.task.ulid },
+				{ ...convertedApiConfigurationFromProto, ulid: controller.task.ulid, taskId: controller.task.taskId },
 				currentMode,
 			)
 		}

@@ -1,7 +1,7 @@
 import type { ApiStreamChunk, ApiStreamToolCallsChunk } from "../stream"
 import {
 	extractGemma4FinalResponse,
-	extractGemma4Thinking,
+	extractGemma4ThinkingProgress,
 	parseGemma4PartialToolCall,
 	parseGemma4ToolCalls,
 	type Gemma4ToolCall,
@@ -11,7 +11,8 @@ import {
 export class Gemma4KesslerStreamAdapter {
 	private buffer = ""
 	private emittedToolCallCount = 0
-	private emittedThinking = false
+	private emittedThinkingText = ""
+	private completedThinking = false
 	private partialToolCall:
 		| {
 				index: number
@@ -25,7 +26,7 @@ export class Gemma4KesslerStreamAdapter {
 		this.buffer += delta
 		const chunks: ApiStreamChunk[] = []
 
-		this.pushThinkingIfComplete(chunks)
+		this.pushThinkingDelta(chunks)
 		for (const chunk of this.newPartialToolCallChunks()) {
 			chunks.push(chunk)
 		}
@@ -38,7 +39,7 @@ export class Gemma4KesslerStreamAdapter {
 
 	finish(): ApiStreamChunk[] {
 		const chunks: ApiStreamChunk[] = []
-		this.pushThinkingIfComplete(chunks)
+		this.pushThinkingDelta(chunks)
 
 		for (const chunk of this.newToolCallChunks({ allowUnterminatedAtEof: true })) {
 			chunks.push(chunk)
@@ -59,14 +60,22 @@ export class Gemma4KesslerStreamAdapter {
 		return this.emittedToolCallCount > 0
 	}
 
-	private pushThinkingIfComplete(chunks: ApiStreamChunk[]): void {
-		if (this.emittedThinking) {
+	private pushThinkingDelta(chunks: ApiStreamChunk[]): void {
+		if (this.completedThinking) {
 			return
 		}
-		const { thinking, complete } = extractGemma4Thinking(this.buffer)
-		if (complete && thinking) {
-			chunks.push({ type: "reasoning", reasoning: thinking })
-			this.emittedThinking = true
+		const { thinking, complete, detected } = extractGemma4ThinkingProgress(this.buffer)
+		if (detected && thinking) {
+			const nextDelta = thinking.startsWith(this.emittedThinkingText)
+				? thinking.slice(this.emittedThinkingText.length)
+				: thinking
+			if (nextDelta) {
+				chunks.push({ type: "reasoning", reasoning: nextDelta })
+				this.emittedThinkingText = thinking
+			}
+		}
+		if (complete) {
+			this.completedThinking = true
 		}
 	}
 
@@ -90,6 +99,9 @@ export class Gemma4KesslerStreamAdapter {
 	private newPartialToolCallChunks(): ApiStreamToolCallsChunk[] {
 		const partial = parseGemma4PartialToolCall(this.buffer)
 		if (!partial || partial.index < this.emittedToolCallCount) {
+			return []
+		}
+		if (partial.name === "attempt_completion") {
 			return []
 		}
 

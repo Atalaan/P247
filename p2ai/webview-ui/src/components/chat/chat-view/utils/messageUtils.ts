@@ -82,6 +82,24 @@ export function filterVisibleMessages(messages: ClineMessage[]): ClineMessage[] 
 				// waiting shimmer before the first model chunk arrives.
 				try {
 					const info = JSON.parse(message.text || "{}")
+					if (isP2AiLocalRuntimeApiReqInfo(info)) {
+						if (info.cost != null && !info.cancelReason && !info.streamingFailedMessage) {
+							let hasFollowingReasoning = false
+							for (const candidate of arr.slice(index + 1)) {
+								if (candidate.say === "api_req_started") {
+									break
+								}
+								if (candidate.say === "reasoning" && (candidate.text ?? "").trim().length > 0) {
+									hasFollowingReasoning = true
+									break
+								}
+							}
+							if (hasFollowingReasoning) {
+								return false
+							}
+						}
+						break
+					}
 					if (info.cost == null || info.cancelReason || info.streamingFailedMessage) {
 						break // keep - has error content
 					}
@@ -106,6 +124,14 @@ export function filterVisibleMessages(messages: ClineMessage[]): ClineMessage[] 
 		}
 		return true
 	})
+}
+
+function isP2AiLocalRuntimeApiReqInfo(info: any): boolean {
+	return (
+		info?.localRuntime?.stack === "p2ai_gui_p247_local_runtime" ||
+		info?.localRuntime?.runtime_route === "c2ai_p2ai_local_gemma4_llamacpp_cuda13" ||
+		info?.localRuntime?.source_system === "p247_cline"
+	)
 }
 
 /**
