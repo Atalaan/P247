@@ -20,5 +20,19 @@ Module.prototype.require = function (path: string) {
 	return originalRequire.call(this, path)
 }
 
-// Required to have access to String.prototype.toPosix
-import "../utils/path"
+// Unit tests only need the String.prototype.toPosix helper, not the full
+// runtime path module with workspace/host dependencies.
+declare global {
+	interface String {
+		toPosix(): string
+	}
+}
+
+String.prototype.toPosix = function (this: string): string {
+	if (this.startsWith("\\\\?\\")) {
+		return this.toString()
+	}
+	return this.replace(/\\/g, "/")
+}
+
+export {}

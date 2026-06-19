@@ -15,7 +15,11 @@ import {
 } from "@core/observability/p2ai-artifacts"
 import type { ApiHandler, CommonApiHandlerOptions } from "../"
 import { withRetry } from "../retry"
-import { buildGemma4KesslerPrompt, buildGemma4KesslerRepairPrompt } from "../transform/gemma4-kessler/prompt"
+import {
+	buildGemma4KesslerDeterministicAttemptCompletion,
+	buildGemma4KesslerPrompt,
+	buildGemma4KesslerRepairPrompt,
+} from "../transform/gemma4-kessler/prompt"
 import { Gemma4KesslerStreamAdapter } from "../transform/gemma4-kessler/stream-adapter"
 import { buildGptOssHarmonyPrompt, buildGptOssHarmonyRepairPrompt } from "../transform/gpt-oss-harmony/prompt"
 import { GptOssHarmonyStreamAdapter } from "../transform/gpt-oss-harmony/stream-adapter"
@@ -338,6 +342,35 @@ export class LmStudioHandler implements ApiHandler {
 						final_text_preview: finalText.slice(0, 1200),
 					},
 				})
+
+				const deterministicCompletion = buildGemma4KesslerDeterministicAttemptCompletion(messages)
+				if (deterministicCompletion) {
+					const callId = `call_gemma4_deterministic_attempt_${Date.now().toString(16)}`
+					const event: ApiStreamToolCallsChunk = {
+						type: "tool_calls",
+						partial: false,
+						tool_call: {
+							call_id: callId,
+							function: {
+								id: callId,
+								name: "attempt_completion",
+								arguments: JSON.stringify({ result: deterministicCompletion.result }),
+							},
+						},
+					}
+					recordP2AiDiagnosticEvent({
+						event: "gemma4_kessler_deterministic_attempt_completion",
+						message: "Gemma4/Kessler deterministic attempt_completion emitted after post-tool no-tool response",
+						payload: {
+							original_instruction: deterministicCompletion.originalInstruction.slice(0, 1000),
+							latest_tool_result_preview: deterministicCompletion.latestToolResultPreview,
+							result: deterministicCompletion.result,
+						},
+					})
+					this.recordGemma4ToolCall(event, "repair")
+					yield event
+					return
+				}
 
 				const repairPrompt = buildGemma4KesslerRepairPrompt({
 					systemPrompt,

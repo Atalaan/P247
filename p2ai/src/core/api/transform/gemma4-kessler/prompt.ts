@@ -78,7 +78,7 @@ export function buildGemma4KesslerPrompt(options: Gemma4KesslerPromptOptions): s
 
 export function buildGemma4KesslerRepairPrompt(options: Gemma4KesslerRepairPromptOptions): string {
 	const toolDeclarations = toolDeclarationsForPrompt(options.systemPrompt, options.tools)
-	const latestUser = latestUserTextForRepair(options.messages)
+	const repairContext = repairContextForMessages(options.messages)
 	const invalid = sanitizeGemma4Text(options.invalidResponse).slice(0, 1200)
 	return [
 		`<|turn>system`,
@@ -86,6 +86,9 @@ export function buildGemma4KesslerRepairPrompt(options: Gemma4KesslerRepairPromp
 		`Output exactly one official Gemma4 <|tool_call> as the first token. No prose.`,
 		`Use only declared tools. The declaration name is the exact tool name to call.`,
 		`Valid syntax: <|tool_call>call:tool_name{"arg":"value"}<tool_call|>`,
+		`Obey ORIGINAL_USER_INSTRUCTION, including forbidden tools and required final tool.`,
+		`If LATEST_TOOL_RESULT is present and ORIGINAL_USER_INSTRUCTION asks to finish with attempt_completion, output attempt_completion now using only LATEST_TOOL_RESULT.`,
+		`Never call a tool that ORIGINAL_USER_INSTRUCTION forbids.`,
 		`If the latest user only asks for an exact direct answer, use attempt_completion with exactly that answer.`,
 		`For "Antwoord exact met OK.", output exactly: <|tool_call>call:attempt_completion{"result":"OK"}<tool_call|>`,
 		`Never copy tool descriptions, schema text, "params", or previous invalid text into arguments.`,
@@ -94,8 +97,11 @@ export function buildGemma4KesslerRepairPrompt(options: Gemma4KesslerRepairPromp
 		toolDeclarations,
 		`<turn|>`,
 		`<|turn>user`,
-		`LATEST_USER:`,
-		sanitizeGemma4Text(latestUser),
+		`ORIGINAL_USER_INSTRUCTION:`,
+		sanitizeGemma4Text(repairContext.originalInstruction),
+		``,
+		`LATEST_TOOL_RESULT:`,
+		sanitizeGemma4Text(repairContext.latestToolResult).slice(0, 3000),
 		``,
 		`PREVIOUS_INVALID_RESPONSE:`,
 		invalid,
@@ -104,7 +110,39 @@ export function buildGemma4KesslerRepairPrompt(options: Gemma4KesslerRepairPromp
 	].join("\n")
 }
 
-function latestUserTextForRepair(messages: ClineStorageMessage[]): string {
+export function buildGemma4KesslerDeterministicAttemptCompletion(messages: ClineStorageMessage[]):
+	| {
+			result: string
+			originalInstruction: string
+			latestToolResultPreview: string
+	  }
+	| undefined {
+	const repairContext = repairContextForMessages(messages)
+	if (!repairContext.latestToolResult.trim()) {
+		return undefined
+	}
+	if (!expectsAttemptCompletion(repairContext.originalInstruction)) {
+		return undefined
+	}
+
+	return {
+		result: summarizeToolResultForAttemptCompletion(
+			repairContext.latestToolResult,
+			repairContext.originalInstruction,
+		),
+		originalInstruction: repairContext.originalInstruction,
+		latestToolResultPreview: repairContext.latestToolResult.slice(0, 1200),
+	}
+}
+
+function repairContextForMessages(messages: ClineStorageMessage[]): {
+	originalInstruction: string
+	latestToolResult: string
+} {
+	let originalInstruction = ""
+	let latestUser = ""
+	let latestToolResult = ""
+
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		const message = messages[index]
 		if (message.role !== "user") {
@@ -112,22 +150,89 @@ function latestUserTextForRepair(messages: ClineStorageMessage[]): string {
 		}
 		const content = message.content
 		if (typeof content === "string") {
-			return content
+			if (!latestUser) {
+				latestUser = content
+			}
+			if (!originalInstruction && content.trim()) {
+				originalInstruction = content
+			}
+			continue
 		}
-		return content
-			.map((block) => {
-				if (block.type === "text") {
-					return block.text || ""
-				}
-				if (block.type === "tool_result") {
-					return contentBlockToText((block as ClineUserToolResultContentBlock).content)
-				}
-				return ""
-			})
-			.filter(Boolean)
-			.join("\n")
+		const textParts: string[] = []
+		const toolResultParts: string[] = []
+		for (const block of content) {
+			if (block.type === "text") {
+				textParts.push(block.text || "")
+			} else if (block.type === "tool_result") {
+				toolResultParts.push(contentBlockToText((block as ClineUserToolResultContentBlock).content))
+			}
+		}
+		const userText = [...textParts, ...toolResultParts].filter(Boolean).join("\n")
+		if (!latestUser && userText) {
+			latestUser = userText
+		}
+		if (!latestToolResult && toolResultParts.length > 0) {
+			latestToolResult = toolResultParts.filter(Boolean).join("\n")
+		}
+		const instructionText = textParts.filter(Boolean).join("\n")
+		if (!originalInstruction && instructionText.trim()) {
+			originalInstruction = instructionText
+		}
 	}
-	return ""
+
+	return {
+		originalInstruction: originalInstruction || latestUser,
+		latestToolResult,
+	}
+}
+
+function expectsAttemptCompletion(instruction: string): boolean {
+	return /attempt_completion|sluit af|rond af|afronden|final answer/i.test(instruction)
+}
+
+function summarizeToolResultForAttemptCompletion(toolResult: string, instruction: string): string {
+	const searchSummary = summarizeSearchFilesResult(toolResult)
+	if (searchSummary) {
+		return searchSummary
+	}
+
+	const compact = toolResult
+		.replace(/\r/g, "")
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line && !line.startsWith("│----"))
+	const maxLines = /maximaal\s+2|maximum\s+2|max\s+2/i.test(instruction) ? 2 : 4
+	return compact.slice(0, maxLines + 1).join("\n").slice(0, 700)
+}
+
+function summarizeSearchFilesResult(toolResult: string): string | undefined {
+	const match = toolResult.match(/\[search_files for '([^']+)'\] Result:\s*Found (\d+) results\./i)
+	if (!match) {
+		return undefined
+	}
+
+	const query = match[1]
+	const count = Number(match[2])
+	if (count === 0) {
+		return `De zoekopdracht naar '${query}' leverde 0 resultaten op.`
+	}
+
+	const paths = unique(
+		toolResult
+			.split(/\r?\n/)
+			.map((line) => line.trim())
+			.filter((line) => /^[A-Za-z0-9_.\\/ -]+\.[A-Za-z0-9]+$/.test(line))
+			.slice(0, 2),
+	)
+	const hitText =
+		paths.length > 0
+			? ` Eerste hits: ${paths.map((path) => `\`${path}\``).join(" en ")}.`
+			: ""
+	return `De zoekopdracht naar '${query}' leverde ${count} resultaten op.${hitText}`
+}
+
+function unique(values: string[]): string[] {
+	return [...new Set(values)]
 }
 
 function flushPendingModelToolCalls(parts: string[], pendingModelToolCalls: string[]): void {
