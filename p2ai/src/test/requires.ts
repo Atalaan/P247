@@ -1,3 +1,6 @@
+import { createRequire } from "module"
+
+const require = createRequire(import.meta.url)
 const Module = require("module")
 const originalRequire = Module.prototype.require
 

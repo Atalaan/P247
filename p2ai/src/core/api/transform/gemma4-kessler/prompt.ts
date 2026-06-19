@@ -17,6 +17,12 @@ export interface Gemma4KesslerRepairPromptOptions extends Gemma4KesslerPromptOpt
 	invalidResponse: string
 }
 
+type DeterministicOutputShape = "search_summary_two_hits" | "exact_stdout"
+
+type DeterministicCompletionContract =
+	| { kind: "single_tool"; toolName: string; outputShape: DeterministicOutputShape }
+	| { kind: "disabled" }
+
 const protocolPrelude = `You are Cline running in ACT MODE through the C2Ai Gemma4/Kessler transport.
 You may think in a Gemma4 thought channel first:
 <|channel>thought
@@ -117,6 +123,11 @@ export function buildGemma4KesslerDeterministicAttemptCompletion(messages: Cline
 			latestToolResultPreview: string
 	  }
 	| undefined {
+	const contract = inferDeterministicCompletionContract(messages)
+	if (contract.kind === "disabled") {
+		return undefined
+	}
+
 	const repairContext = repairContextForMessages(messages)
 	if (!repairContext.latestToolResult.trim()) {
 		return undefined
@@ -124,12 +135,22 @@ export function buildGemma4KesslerDeterministicAttemptCompletion(messages: Cline
 	if (!expectsAttemptCompletion(repairContext.originalInstruction)) {
 		return undefined
 	}
+	if (toolResultLooksFailed(repairContext.latestToolResult)) {
+		return undefined
+	}
+
+	const lastToolName = lastAssistantToolUseName(messages)
+	if (lastToolName !== contract.toolName) {
+		return undefined
+	}
+
+	const result = deterministicResultForShape(repairContext.latestToolResult, contract.outputShape)
+	if (!result) {
+		return undefined
+	}
 
 	return {
-		result: summarizeToolResultForAttemptCompletion(
-			repairContext.latestToolResult,
-			repairContext.originalInstruction,
-		),
+		result,
 		originalInstruction: repairContext.originalInstruction,
 		latestToolResultPreview: repairContext.latestToolResult.slice(0, 1200),
 	}
@@ -190,19 +211,71 @@ function expectsAttemptCompletion(instruction: string): boolean {
 	return /attempt_completion|sluit af|rond af|afronden|final answer/i.test(instruction)
 }
 
-function summarizeToolResultForAttemptCompletion(toolResult: string, instruction: string): string {
-	const searchSummary = summarizeSearchFilesResult(toolResult)
-	if (searchSummary) {
-		return searchSummary
+function inferDeterministicCompletionContract(messages: ClineStorageMessage[]): DeterministicCompletionContract {
+	const instruction = repairContextForMessages(messages).originalInstruction
+	if (!expectsAttemptCompletion(instruction)) {
+		return { kind: "disabled" }
 	}
 
-	const compact = toolResult
-		.replace(/\r/g, "")
+	if (/Gebruik uitsluitend search_files\b/i.test(instruction) && /maximaal\s+2|maximum\s+2|max\s+2/i.test(instruction)) {
+		return { kind: "single_tool", toolName: "search_files", outputShape: "search_summary_two_hits" }
+	}
+
+	if (
+		/Gebruik uitsluitend execute_command\b/i.test(instruction) &&
+		/(exacte uitvoer|exact stdout|antwoord exact)/i.test(instruction)
+	) {
+		return { kind: "single_tool", toolName: "execute_command", outputShape: "exact_stdout" }
+	}
+
+	return { kind: "disabled" }
+}
+
+function toolResultLooksFailed(toolResult: string): boolean {
+	return /The tool execution failed|<error>|Error executing|denied this operation|was denied|permission denied/i.test(toolResult)
+}
+
+function lastAssistantToolUseName(messages: ClineStorageMessage[]): string | undefined {
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		const content = messages[i]?.content
+		if (!Array.isArray(content)) {
+			continue
+		}
+		for (let j = content.length - 1; j >= 0; j -= 1) {
+			const block = content[j]
+			if (block.type === "tool_use" && "name" in block && typeof block.name === "string") {
+				return block.name
+			}
+		}
+	}
+	return undefined
+}
+
+function deterministicResultForShape(toolResult: string, shape: DeterministicOutputShape): string | undefined {
+	if (shape === "search_summary_two_hits") {
+		return summarizeSearchFilesResult(toolResult)
+	}
+	if (shape === "exact_stdout") {
+		return extractCommandStdout(toolResult)
+	}
+	return undefined
+}
+
+function extractCommandStdout(toolResult: string): string | undefined {
+	const text = toolResult.replace(/\r/g, "").trim()
+	if (!text) {
+		return undefined
+	}
+
+	const resultMatch = text.match(/\]\s*Result:\s*([\s\S]*)$/i)
+	const candidate = (resultMatch?.[1] ?? text)
 		.split("\n")
 		.map((line) => line.trim())
-		.filter((line) => line && !line.startsWith("│----"))
-	const maxLines = /maximaal\s+2|maximum\s+2|max\s+2/i.test(instruction) ? 2 : 4
-	return compact.slice(0, maxLines + 1).join("\n").slice(0, 700)
+		.filter((line) => line && !line.startsWith("[execute_command for "))
+		.join("\n")
+		.trim()
+
+	return candidate || undefined
 }
 
 function summarizeSearchFilesResult(toolResult: string): string | undefined {

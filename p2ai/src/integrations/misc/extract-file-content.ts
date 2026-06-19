@@ -9,6 +9,24 @@ export type FileContentResult = {
 	imageBlock?: Anthropic.ImageBlockParam
 }
 
+export class FileMissingPathError extends Error {
+	constructor(
+		readonly absolutePath: string,
+		readonly code: "ENOENT" | "ENOTDIR",
+	) {
+		super(`File not found: ${absolutePath}`)
+		this.name = "FileMissingPathError"
+	}
+}
+
+export function isFileMissingPathError(error: unknown): error is FileMissingPathError {
+	return error instanceof FileMissingPathError
+}
+
+export function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * Extract content from a file, handling both text and images
  * Extra logic for handling images based on whether the model supports images
@@ -17,8 +35,12 @@ export async function extractFileContent(absolutePath: string, modelSupportsImag
 	// Check if file exists first
 	try {
 		await fs.access(absolutePath)
-	} catch (_error) {
-		throw new Error(`File not found: ${absolutePath}`)
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code
+		if (code === "ENOENT" || code === "ENOTDIR") {
+			throw new FileMissingPathError(absolutePath, code)
+		}
+		throw error
 	}
 
 	const fileExtension = path.extname(absolutePath).toLowerCase()
